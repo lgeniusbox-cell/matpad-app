@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "type": "game",
+  "meta": {
+    "title": "Neon Speed Dash",
+    "genre": "Rythme & Parcours",
+    "difficulty": "easy",
+    "level": 1,
+    "author": "FitTV Studio",
+    "createdAt": "2026-10-22"
+  },
+  "video": {
+    "videoId": "XTgSxQ6ZLM0",
+    "url": "https://www.youtube.com/watch?v=XTgSxQ6ZLM0",
+    "title": "Neon City Dash Track",
+    "durationSeconds": 240,
+    "effectiveDurationSeconds": 160,
+    "trimStart": 5,
+    "trimEnd": 170,
+    "cuts": [
+      { "start": 50, "end": 60 }
+    ],
+    "audioMuted": false
+  },
+  "game": {
+    "rules": {
+      "maxLives": 4,
+      "maxMisses": 6,
+      "timingWindowMs": {
+        "perfect": 150,
+        "good": 350
+      },
+      "scoring": {
+        "perfect": 120,
+        "good": 60,
+        "comboMultiplierStep": 4,
+        "maxMultiplier": 4
+      },
+      "winCondition": "survive_to_end"
+    },
+    "actions": ["JUMP", "SLIDE_DOWN", "LEFT", "RIGHT"],
+    "timeline": [
+      { "id": "sd_0", "time": 8.0, "action": "STARTING COUNT", "showOnScreen": true, "duration": 3.0, "points": 0, "hint": "Top départ !" },
+      { "id": "sd_1", "time": 11.0, "action": "GO", "showOnScreen": true, "duration": 1.5, "points": 0, "hint": "En piste !" },
+      { "id": "sd_2", "time": 15.0, "action": "RIGHT", "showOnScreen": true, "duration": 2.0, "points": 120, "hint": "Virage à droite" },
+      { "id": "sd_3", "time": 20.0, "action": "LEFT", "showOnScreen": true, "duration": 2.0, "points": 120, "hint": "Virage à gauche" },
+      { "id": "sd_4", "time": 25.0, "action": "JUMP", "showOnScreen": true, "duration": 2.0, "points": 120, "hint": "Franchissez la barrière !" },
+      { "id": "sd_5", "time": 30.0, "action": "SLIDE_DOWN", "showOnScreen": true, "duration": 2.0, "points": 120, "hint": "Passage bas !" },
+      { "id": "sd_6", "time": 36.0, "action": "JUMP", "showOnScreen": true, "duration": 2.0, "points": 120, "hint": "Grand saut !" },
+      { "id": "sd_7", "time": 42.0, "action": "RIGHT", "showOnScreen": true, "duration": 2.0, "points": 120, "hint": "Virage serré droit" },
+      { "id": "sd_8", "time": 68.0, "action": "SLIDE_DOWN", "showOnScreen": true, "duration": 2.0, "points": 120, "hint": "Tunnel étroit" },
+      { "id": "sd_9", "time": 78.0, "action": "END", "showOnScreen": true, "duration": 3.0, "points": 300, "hint": "Ligne d'arrivée !" }
+    ]
+  }
+}

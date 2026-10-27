@@ -1,0 +1,6 @@
+{
+  "name": "FitTV Arena",
+  "description": "Android TV fitness and rhythm gaming web app controlled by TV remote, gamepad, and floor-mat step tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

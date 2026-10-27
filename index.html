@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FitTV Arena - Android TV Fitness & Rhythm Games</title>
+    <meta name="description" content="Android TV fitness and rhythm gaming web app controlled by TV remote, gamepad, and floor-mat step tracker." />
+    <meta property="og:title" content="FitTV Arena - Android TV Fitness & Rhythm Games" />
+    <meta property="og:description" content="Android TV fitness and rhythm gaming web app controlled by TV remote, gamepad, and floor-mat step tracker." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body class="theme-adult">
+    <div id="app-root">
+      
+      <!-- Top Right Header Status: Gamepad Connection & Live Indicators -->
+      <div id="top-header-bar">
+        <div class="status-badge" id="gamepad-badge">
+          <div class="status-dot" id="gp-status-dot"></div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5S17.67 9 18.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+          </svg>
+          <span id="gp-status-label">Manette / Tapis prêt</span>
+        </div>
+      </div>
+
+      <!-- Left Navigation Rail (YouTube TV Style: 96px collapsed -> 320px expanded) -->
+      <nav id="nav-rail" aria-label="Navigation Principale">
+        <div class="rail-brand">
+          <div class="brand-icon">⚡</div>
+          <span class="brand-text">FitTV Arena</span>
+        </div>
+        <div class="rail-items">
+          <button class="rail-btn active" data-target="home" data-focusable="true">
+            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            <span class="rail-label">Accueil</span>
+          </button>
+          <button class="rail-btn" data-target="games" data-focusable="true">
+            <svg viewBox="0 0 24 24"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm3-3c-.83 0-1.5-.67-1.5-1.5S17.67 9 18.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+            <span class="rail-label">Jeux Rythme</span>
+          </button>
+          <button class="rail-btn" data-target="runs" data-focusable="true">
+            <svg viewBox="0 0 24 24"><path d="M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1l-5.2 2.2v4.7h2v-3.4l1.8-.7-1.6 8.1-4.9-1-.4 2 6.1 1.2z"/></svg>
+            <span class="rail-label">Course Virtuelle</span>
+          </button>
+          <button class="rail-btn" data-target="cardio" data-focusable="true">
+            <svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+            <span class="rail-label">Cardio</span>
+            <span class="locked-badge">🔒 Bientôt</span>
+          </button>
+          <button class="rail-btn" data-target="profile" data-focusable="true">
+            <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            <span class="rail-label">Profil</span>
+          </button>
+          <button class="rail-btn" data-target="settings" data-focusable="true">
+            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            <span class="rail-label">Paramètres</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Main Content Area to the right of the rail -->
+      <main id="content-area">
+        
+        <!-- SCREEN 1: HOME (3 Big Entry Tiles in ONE row, UI.entryTile 560x315) -->
+        <section id="screen-home" class="screen active">
+          <header class="screen-header">
+            <h1 class="screen-title">FitTV Arena</h1>
+            <p class="screen-subtitle">Fitness interactif et jeux de rythme pour Android TV</p>
+          </header>
+
+          <div class="home-tiles-row">
+            <!-- Entry Tile 1: Games -->
+            <div id="tile-games" class="entry-tile" data-focusable="true">
+              <div class="tile-bg-art">
+                <svg viewBox="0 0 200 200">
+                  <circle cx="100" cy="100" r="80" fill="none" stroke="currentColor" stroke-width="6"/>
+                  <polygon points="85,60 140,100 85,140" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="tile-content">
+                <div class="tile-tag">Mode Arcade</div>
+                <h2 class="tile-title">Jeux Rythme</h2>
+                <p class="tile-desc">Esquivez, sautez et frappez en cadence sur la vidéo avec feedback en temps réel.</p>
+              </div>
+            </div>
+
+            <!-- Entry Tile 2: Virtual Run -->
+            <div id="tile-runs" class="entry-tile" data-focusable="true">
+              <div class="tile-bg-art">
+                <svg viewBox="0 0 200 200">
+                  <path d="M40 160 L90 80 L130 130 L170 60" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="tile-content">
+                <div class="tile-tag">Endurance Immersion</div>
+                <h2 class="tile-title">Course Virtuelle</h2>
+                <p class="tile-desc">Courez sur tapis ou au sol : la vitesse vidéo s'adapte en direct à votre cadence.</p>
+              </div>
+            </div>
+
+            <!-- Entry Tile 3: Cardio Sessions (Locked) -->
+            <div id="tile-cardio" class="entry-tile" data-focusable="true">
+              <div class="tile-bg-art">
+                <svg viewBox="0 0 200 200">
+                  <path d="M100 35 L120 75 L165 75 L130 105 L145 150 L100 120 L55 150 L70 105 L35 75 L80 75 Z" fill="none" stroke="currentColor" stroke-width="6"/>
+                </svg>
+              </div>
+              <div class="tile-content">
+                <div class="tile-tag">HIIT & Intervalles</div>
+                <h2 class="tile-title">Sessions Cardio</h2>
+                <p class="tile-desc">Circuits d'entraînement fractionné haute intensité guidés par coach vidéo.</p>
+                <div class="tile-locked-banner">
+                  <span>🔒 Bientôt disponible</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SCREEN 2: GAMES (Horizontal Shelves Grouped by Genre, Fixed Banners 400x225) -->
+        <section id="screen-games" class="screen">
+          <header class="screen-header">
+            <h1 class="screen-title">Jeux de Rythme</h1>
+            <p class="screen-subtitle">Sélectionnez une session et suivez les repères visuels à l'écran</p>
+          </header>
+          <div id="games-shelves-container" class="shelves-container">
+            <!-- Shelves injected dynamically by appUI -->
+          </div>
+        </section>
+
+        <!-- SCREEN 3: VIRTUAL RUN (Horizontal Shelves Grouped by Genre) -->
+        <section id="screen-runs" class="screen">
+          <header class="screen-header">
+            <h1 class="screen-title">Courses Virtuelles</h1>
+            <p class="screen-subtitle">Parcours scéniques mondiaux synchronisés à votre vitesse réelle</p>
+          </header>
+          <div id="runs-shelves-container" class="shelves-container">
+            <!-- Shelves injected dynamically by appUI -->
+          </div>
+        </section>
+
+        <!-- SCREEN 4: PROFILE & AUDIENCE THEME -->
+        <section id="screen-profile" class="screen">
+          <header class="screen-header">
+            <h1 class="screen-title">Profil Joueur</h1>
+            <p class="screen-subtitle">Personnalisation des paramètres athlétiques et du thème d'affichage</p>
+          </header>
+
+          <div class="settings-list">
+            <!-- Player Name -->
+            <div class="settings-card">
+              <div class="settings-info">
+                <span class="settings-name">Nom du profil</span>
+                <span id="profile-name-display" class="settings-desc">Champion TV</span>
+              </div>
+              <button id="btn-edit-name" class="tv-btn primary" data-focusable="true">Modifier le nom</button>
+            </div>
+
+            <!-- Audience Theme (Kids / Adult / Pro) -->
+            <div class="settings-card">
+              <div class="settings-info">
+                <span class="settings-name">Thème d'affichage</span>
+                <span class="settings-desc">KIDS (arrondi, coloré) · ADULT (sombre, sobre) · PRO (télémétrie dense)</span>
+              </div>
+              <div class="seg-btn-group">
+                <button class="seg-btn theme-selector-btn" data-theme="kids" data-focusable="true">KIDS</button>
+                <button class="seg-btn theme-selector-btn active" data-theme="adult" data-focusable="true">ADULT</button>
+                <button class="seg-btn theme-selector-btn" data-theme="pro" data-focusable="true">PRO</button>
+              </div>
+            </div>
+
+            <!-- Stride Length -->
+            <div class="settings-card">
+              <div class="settings-info">
+                <span class="settings-name">Longueur de foulée</span>
+                <span class="settings-desc">Calibrage de la distance parcourue à chaque pas</span>
+              </div>
+              <div class="settings-control">
+                <button id="btn-stride-minus" class="tv-btn" data-focusable="true">- 0.05m</button>
+                <span id="profile-stride-val" class="stat-val">0.75 m</span>
+                <button id="btn-stride-plus" class="tv-btn" data-focusable="true">+ 0.05m</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SCREEN 5: SETTINGS -->
+        <section id="screen-settings" class="screen">
+          <header class="screen-header">
+            <h1 class="screen-title">Paramètres Généraux</h1>
+            <p class="screen-subtitle">Audio, calibrage de latence TV et mode simulation</p>
+          </header>
+
+          <div class="settings-list">
+            <!-- Sound Effects -->
+            <div class="settings-card">
+              <div class="settings-info">
+                <span class="settings-name">Effets Sonores WebAudio</span>
+                <span class="settings-desc">Bips de décompte, frappes et fanfares de victoire</span>
+              </div>
+              <button id="btn-setting-sound" class="tv-btn" data-focusable="true">Activé</button>
+            </div>
+
+            <!-- Latency Calibration -->
+            <div class="settings-card">
+              <div class="settings-info">
+                <span class="settings-name">Calibrage Latence Vidéo (ms)</span>
+                <span class="settings-desc">Compense le décalage de polling de l'horloge YouTube</span>
+              </div>
+              <div class="settings-control">
+                <button id="btn-cal-minus" class="tv-btn" data-focusable="true">- 20ms</button>
+                <span id="cal-offset-val" class="stat-val">0 ms</span>
+                <button id="btn-cal-plus" class="tv-btn" data-focusable="true">+ 20ms</button>
+                <button id="btn-cal-test" class="tv-btn primary" data-focusable="true">Test son</button>
+              </div>
+            </div>
+
+            <!-- Language Toggle -->
+            <div class="settings-card">
+              <div class="settings-info">
+                <span class="settings-name">Langue de l'interface</span>
+                <span class="settings-desc">Français ou Anglais</span>
+              </div>
+              <button id="btn-setting-lang" class="tv-btn" data-focusable="true">FR</button>
+            </div>
+
+            <!-- Simulation Mode Toggle -->
+            <div class="settings-card">
+              <div class="settings-info">
+                <span class="settings-name">Mode Simulation Pas (Clavier Alt+L / Alt+R)</span>
+                <span class="settings-desc">Affiche le graphique d'intervalle de foulée en direct</span>
+              </div>
+              <button id="btn-setting-sim" class="tv-btn" data-focusable="true">Désactivé</button>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <!-- FULLSCREEN VIDEO STAGE & HUD SYSTEM -->
+      <div id="video-stage">
+        <!-- Persistent YouTube Player iFrame Container -->
+        <div id="yt-player-container">
+          <div id="yt-iframe-placeholder"></div>
+        </div>
+
+        <!-- Canvas for Feedback Graphics, Action Cues, Confetti & Shake -->
+        <canvas id="game-feedback-canvas"></canvas>
+
+        <!-- Toast Banner for Outcome Seeks (e.g. "RATÉ ! ↪ 3:03") -->
+        <div id="seek-toast-banner">RATÉ ! ↪ 3:03</div>
+
+        <!-- Simulation Debug Interval Graph -->
+        <canvas id="sim-debug-canvas" width="360" height="120"></canvas>
+
+        <!-- HUD Layer: Game Mode -->
+        <div id="game-hud" class="hidden">
+          <div class="game-top-bar">
+            <div class="game-stat-group">
+              <div class="stat-item">
+                <span class="stat-label">Score</span>
+                <span id="hud-game-score" class="stat-val">0</span>
+              </div>
+              <div class="combo-badge" id="hud-game-combo">x1 (0)</div>
+            </div>
+            
+            <div class="game-stat-group">
+              <div class="stat-item">
+                <span class="stat-label">Vies</span>
+                <div id="hud-lives-container" class="lives-container"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Timeline Progress Bar -->
+          <div class="game-bottom-timeline">
+            <div class="timeline-progress-track">
+              <div id="game-timeline-progress" class="timeline-progress-fill"></div>
+            </div>
+            
+            <div class="timeline-cues-strip">
+              <!-- Next Action Spotlight -->
+              <div id="game-next-cue-spotlight" class="next-action-spotlight">
+                <div id="next-cue-icon" class="action-icon-circle">👊</div>
+                <div>
+                  <div id="next-cue-text" class="action-cue-text">PUNCH</div>
+                  <div id="next-cue-hint" class="action-hint">Frappe au visage !</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HUD Layer: Virtual Run Mode (Anchored Bottom-Left, 280-320px) -->
+        <div id="run-hud" class="hidden">
+          <aside id="run-hud-panel">
+            <!-- Feet Flash Indicators (Left / Right Floor-Mat) -->
+            <div class="feet-flash-container">
+              <div id="foot-left-ind" class="foot-indicator">
+                <svg class="foot-icon" viewBox="0 0 24 24"><path d="M10 2c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2s2-.9 2-2V4c0-1.1-.9-2-2-2zm-3 7c-.55 0-1 .45-1 1v5c0 3.86 3.14 7 7 7s7-3.14 7-7v-5c0-.55-.45-1-1-1s-1 .45-1 1v5c0 2.76-2.24 5-5 5s-5-2.24-5-5v-5c0-.55-.45-1-1-1z"/></svg>
+                <span class="foot-label">GAUCHE (L1)</span>
+              </div>
+              <div id="foot-right-ind" class="foot-indicator">
+                <svg class="foot-icon" viewBox="0 0 24 24"><path d="M14 2c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2s-2-.9-2-2V4c0-1.1.9-2 2-2zm3 7c.55 0 1 .45 1 1v5c0 3.86-3.14 7-7 7s-7-3.14-7-7v-5c0-.55.45-1 1-1s1 .45 1 1v5c0 2.76 2.24 5 5 5s5-2.24 5-5v-5c0-.55.45-1 1-1z"/></svg>
+                <span class="foot-label">DROITE (R1)</span>
+              </div>
+            </div>
+
+            <!-- Live Metric Stack -->
+            <div class="run-metrics-stack">
+              <div class="run-metric-row">
+                <span class="metric-label">Vitesse</span>
+                <div>
+                  <span id="hud-metric-speed" class="metric-big-num">0.0</span>
+                  <span class="metric-unit">km/h</span>
+                </div>
+              </div>
+              <div class="run-metric-row">
+                <span class="metric-label">Allure</span>
+                <div>
+                  <span id="hud-metric-pace" class="metric-big-num">--'--"</span>
+                  <span class="metric-unit">/km</span>
+                </div>
+              </div>
+              <div class="run-metric-row">
+                <span class="metric-label">Distance</span>
+                <div>
+                  <span id="hud-metric-dist" class="metric-big-num">0</span>
+                  <span id="hud-metric-dist-unit" class="metric-unit">m</span>
+                </div>
+              </div>
+              <div class="run-metric-row">
+                <span class="metric-label">Temps Actif</span>
+                <div>
+                  <span id="hud-metric-time" class="metric-big-num">0:00</span>
+                </div>
+              </div>
+              <div class="run-metric-row">
+                <span class="metric-label">Pas</span>
+                <div>
+                  <span id="hud-metric-steps" class="metric-big-num">0</span>
+                </div>
+              </div>
+              <div class="run-metric-row">
+                <span class="metric-label">Cadence</span>
+                <div>
+                  <span id="hud-metric-cadence" class="metric-big-num">0</span>
+                  <span class="metric-unit">SPM</span>
+                </div>
+              </div>
+              <div class="run-metric-row">
+                <span class="metric-label">Vitesse Vidéo</span>
+                <div>
+                  <span id="hud-metric-rate" class="metric-big-num">1.0x</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Bottom full-width progress bar -->
+          <div id="run-bottom-progress">
+            <div id="run-bottom-progress-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL 1: PAUSE MENU (D-Pad Navigable) -->
+      <div id="modal-pause" class="modal-overlay">
+        <div class="tv-dialog">
+          <h2 class="dialog-title">Partie en Pause</h2>
+          <p class="dialog-body">Choisissez une action pour continuer ou quitter votre séance.</p>
+          <div class="dialog-actions">
+            <button id="btn-pause-resume" class="tv-btn primary" data-focusable="true">Reprendre</button>
+            <button id="btn-pause-restart" class="tv-btn" data-focusable="true">Recommencer</button>
+            <button id="btn-pause-controls" class="tv-btn" data-focusable="true">Aide Manette</button>
+            <button id="btn-pause-quit" class="tv-btn" data-focusable="true">Quitter la séance</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL 2: ON-SCREEN KEYBOARD (TV D-Pad Friendly) -->
+      <div id="modal-osk" class="modal-overlay">
+        <div class="tv-dialog" id="osk-dialog">
+          <h2 class="dialog-title">Saisir le nom du joueur</h2>
+          <div class="osk-input-display">
+            <span id="osk-input-text"></span>
+          </div>
+          <div class="osk-grid" id="osk-keys-container">
+            <!-- Injected via OnScreenKeyboard class -->
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL 3: CONTROLS HELP (MENU Key or Button) -->
+      <div id="modal-controls-help" class="modal-overlay">
+        <div class="tv-dialog" style="width: 880px;">
+          <h2 class="dialog-title">Commandes & Périphériques</h2>
+          <div class="dialog-body">
+            <table class="controls-table">
+              <thead>
+                <tr>
+                  <th>Action Sémantique</th>
+                  <th>Télécommande / Clavier</th>
+                  <th>Manette Gamepad (Standard)</th>
+                  <th>Tapis Sol</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Navigation Menu</td>
+                  <td><span class="key-chip">Flèches Haut/Bas/G/D</span></td>
+                  <td><span class="key-chip">D-Pad / Stick Gauche</span></td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>Sélectionner (OK)</td>
+                  <td><span class="key-chip">Entrée</span> ou <span class="key-chip">Espace</span></td>
+                  <td><span class="key-chip">Bouton A (0)</span></td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>Retour (BACK)</td>
+                  <td><span class="key-chip">Échap</span> ou <span class="key-chip">Retour</span></td>
+                  <td><span class="key-chip">Bouton B (1)</span></td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>Pas Gauche / Droit</td>
+                  <td><span class="key-chip">Alt+L</span> / <span class="key-chip">Alt+R</span> (ou L/R)</td>
+                  <td><span class="key-chip">L1 (4)</span> / <span class="key-chip">R1 (5)</span></td>
+                  <td>Pied G / D</td>
+                </tr>
+                <tr>
+                  <td>Saut (JUMP)</td>
+                  <td><span class="key-chip">Flèche Haut</span></td>
+                  <td><span class="key-chip">Bouton A</span> ou <span class="key-chip">D-Pad Haut</span></td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>Glissade (SLIDE DOWN)</td>
+                  <td><span class="key-chip">Flèche Bas</span></td>
+                  <td><span class="key-chip">D-Pad / Stick Bas</span></td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>Frappe (PUNCH)</td>
+                  <td><span class="key-chip">Touche F</span></td>
+                  <td><span class="key-chip">Bouton X (2)</span></td>
+                  <td>-</td>
+                </tr>
+                <tr>
+                  <td>Tranchant (SLASH)</td>
+                  <td><span class="key-chip">Touche D</span></td>
+                  <td><span class="key-chip">Bouton Y (3)</span></td>
+                  <td>-</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="dialog-actions">
+            <button id="btn-close-controls" class="tv-btn primary" data-focusable="true">Fermer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL 4: EXIT CONFIRM DIALOG -->
+      <div id="modal-exit" class="modal-overlay">
+        <div class="tv-dialog">
+          <h2 class="dialog-title">Quitter l'application ?</h2>
+          <p class="dialog-body">Êtes-vous sûr de vouloir fermer FitTV Arena ?</p>
+          <div class="dialog-actions">
+            <button id="btn-exit-cancel" class="tv-btn" data-focusable="true">Rester</button>
+            <button id="btn-exit-confirm" class="tv-btn primary" data-focusable="true">Quitter</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL 5: SUMMARY & END SCREEN -->
+      <div id="modal-summary" class="modal-overlay">
+        <div class="tv-dialog" style="width: 820px;">
+          <div class="summary-container">
+            <h2 id="summary-hero-title" class="summary-hero-title">Bravo !</h2>
+            <div class="summary-stats-grid">
+              <div class="summary-stat-box">
+                <span id="summary-stat-1-val" class="summary-stat-val">0</span>
+                <span id="summary-stat-1-lbl" class="summary-stat-lbl">Stat 1</span>
+              </div>
+              <div class="summary-stat-box">
+                <span id="summary-stat-2-val" class="summary-stat-val">0</span>
+                <span id="summary-stat-2-lbl" class="summary-stat-lbl">Stat 2</span>
+              </div>
+              <div class="summary-stat-box">
+                <span id="summary-stat-3-val" class="summary-stat-val">0</span>
+                <span id="summary-stat-3-lbl" class="summary-stat-lbl">Stat 3</span>
+              </div>
+            </div>
+            <div class="dialog-actions" style="margin-top: 20px;">
+              <button id="btn-summary-replay" class="tv-btn primary" data-focusable="true">Rejouer</button>
+              <button id="btn-summary-back" class="tv-btn" data-focusable="true">Retour aux sessions</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TOAST CONTAINER -->
+      <div id="toast-container"></div>
+
+    </div>
+
+    <!-- MAIN SCRIPT MODULE -->
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
