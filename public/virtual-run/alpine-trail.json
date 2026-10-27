@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "type": "virtual_run",
+  "meta": {
+    "title": "Sentier des Crêtes Alpines",
+    "genre": "Nature & Montagne",
+    "difficulty": "hard",
+    "level": 3,
+    "author": "Mountain Trails Club",
+    "createdAt": "2026-10-18"
+  },
+  "video": {
+    "videoId": "XTgSxQ6ZLM0",
+    "url": "https://www.youtube.com/watch?v=XTgSxQ6ZLM0",
+    "title": "Swiss Alpine Valley Run",
+    "durationSeconds": 240,
+    "effectiveDurationSeconds": 175,
+    "trimStart": 15,
+    "trimEnd": 190,
+    "cuts": [
+      { "start": 90, "end": 105 }
+    ],
+    "audioMuted": false
+  },
+  "virtualRun": {
+    "route": {
+      "name": "Val d'Hérens Panoramic Trail",
+      "totalDistanceKm": 4.5,
+      "elevationGainM": 195
+    },
+    "speedMapping": {
+      "referenceSpeedKmh": 7.5,
+      "minRate": 0.25,
+      "maxRate": 2.0
+    }
+  }
+}

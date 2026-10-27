@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "1.0",
+  "type": "game",
+  "meta": {
+    "title": "Cyber Punch Arena",
+    "genre": "Combat & Réflexes",
+    "difficulty": "normal",
+    "level": 2,
+    "author": "FitTV Arena Studio",
+    "createdAt": "2026-10-24T10:00:00.000Z"
+  },
+  "video": {
+    "source": "youtube",
+    "videoId": "XTgSxQ6ZLM0",
+    "url": "https://www.youtube.com/watch?v=XTgSxQ6ZLM0",
+    "title": "Arena Combat Rhythm Experience",
+    "durationSeconds": 240,
+    "effectiveDurationSeconds": 180,
+    "trimStart": 10,
+    "trimEnd": 210,
+    "cuts": [
+      { "start": 60, "end": 75 },
+      { "start": 130, "end": 145 }
+    ],
+    "keptSegments": [
+      { "start": 10, "end": 60, "duration": 50 },
+      { "start": 75, "end": 130, "duration": 55 },
+      { "start": 145, "end": 210, "duration": 65 }
+    ],
+    "audioMuted": false
+  },
+  "game": {
+    "rules": {
+      "maxLives": 3,
+      "maxMisses": 5,
+      "timingWindowMs": { "perfect": 120, "good": 300 },
+      "scoring": { "perfect": 100, "good": 50, "comboMultiplierStep": 5, "maxMultiplier": 4 },
+      "winCondition": "survive_to_end"
+    },
+    "actions": ["STARTING COUNT", "GO", "JUMP", "RIGHT", "LEFT", "SLIDE DOWN", "SLASH", "PUNCH", "END", "WIN"],
+    "timeline": [
+      { "id": "cp_0", "time": 12.0, "action": "STARTING COUNT", "showOnScreen": true, "duration": 3.0, "points": 50, "hint": "Préparez-vous !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_1", "time": 15.0, "action": "GO", "showOnScreen": true, "duration": 1.5, "points": 100, "hint": "Combat !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_2", "time": 18.0, "action": "PUNCH", "showOnScreen": true, "duration": 2.0, "points": 100, "hint": "Coup de poing !", "onFail": { "enabled": true, "seekTo": 183.0 }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_3", "time": 22.0, "action": "SLASH", "showOnScreen": true, "duration": 2.0, "points": 100, "hint": "Tranchant rapide !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_4", "time": 26.5, "action": "JUMP", "showOnScreen": true, "duration": 2.0, "points": 100, "hint": "Sautez par-dessus le rayon !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_5", "time": 31.0, "action": "SLIDE DOWN", "showOnScreen": true, "duration": 2.0, "points": 100, "hint": "Glissez sous l'obstacle !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_6", "time": 36.0, "action": "RIGHT", "showOnScreen": true, "duration": 2.0, "points": 100, "hint": "Esquive à droite !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_7", "time": 41.0, "action": "LEFT", "showOnScreen": true, "duration": 2.0, "points": 100, "hint": "Esquive à gauche !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_8", "time": 47.0, "action": "PUNCH", "showOnScreen": true, "duration": 2.0, "points": 100, "hint": "Frappe finale !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_9", "time": 185.0, "action": "SLASH", "showOnScreen": true, "duration": 2.0, "points": 150, "hint": "Rattrapage !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_10", "time": 192.0, "action": "JUMP", "showOnScreen": true, "duration": 2.0, "points": 150, "hint": "Saut de victoire !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } },
+      { "id": "cp_11", "time": 200.0, "action": "WIN", "showOnScreen": true, "duration": 3.0, "points": 500, "hint": "Victoire !", "onFail": { "enabled": false, "seekTo": null }, "onSuccess": { "enabled": false, "seekTo": null } }
+    ]
+  }
+}

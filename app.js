@@ -1371,19 +1371,30 @@ class AppUI {
     }
   }
 
+  getBaseUrl() {
+    const href = window.location.href.split('#')[0].split('?')[0];
+    if (href.endsWith('.html')) {
+      return href.substring(0, href.lastIndexOf('/') + 1);
+    }
+    return href.endsWith('/') ? href : href + '/';
+  }
+
   async loadGames() {
     const container = document.getElementById("games-shelves-container");
     if (!container) return;
 
     try {
-      const resp = await fetch("./games/index.json");
+      const base = this.getBaseUrl();
+      const manifestUrl = new URL("games/index.json", base).href;
+      const resp = await fetch(manifestUrl);
       if (!resp.ok) throw new Error("Manifest games not found");
       const list = await resp.json();
 
       const items = [];
       for (const filename of list) {
         try {
-          const itemResp = await fetch(`./games/${filename}`);
+          const itemUrl = new URL(`games/${filename}`, base).href;
+          const itemResp = await fetch(itemUrl);
           if (itemResp.ok) {
             const data = await itemResp.json();
             // Contract 5.1: type must match folder
@@ -1417,14 +1428,17 @@ class AppUI {
     if (!container) return;
 
     try {
-      const resp = await fetch("./virtual-run/index.json");
+      const base = this.getBaseUrl();
+      const manifestUrl = new URL("virtual-run/index.json", base).href;
+      const resp = await fetch(manifestUrl);
       if (!resp.ok) throw new Error("Manifest virtual-run not found");
       const list = await resp.json();
 
       const items = [];
       for (const filename of list) {
         try {
-          const itemResp = await fetch(`./virtual-run/${filename}`);
+          const itemUrl = new URL(`virtual-run/${filename}`, base).href;
+          const itemResp = await fetch(itemUrl);
           if (itemResp.ok) {
             const data = await itemResp.json();
             // Contract 5.1: type must match folder
