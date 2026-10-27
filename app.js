@@ -1,338 +1,65 @@
 /**
  * FitTV Arena - Core Application
- * Designed for Android TV WebView (10-Foot UI, D-Pad, Gamepad & Floor-Mat Tracker)
+ * Android TV 10-Foot UI, Remote D-Pad, Gamepad & Floor-Mat Step Tracker
  * 
- * ARCHITECTURE (3 Clear Layers):
  * 1. INPUT LAYER: Converts raw keyboard/gamepad/remote into SEMANTIC EVENTS on EventBus.
- *    Exposes window.TVBridge for Android Java integration.
- * 2. APP / UI LAYER: Spatial focus navigation, screens, shelves, banners, dialogs, themes.
- * 3. ENGINES: Video controller, GameEngine (timeline rhythm), RunEngine (cadence/speed).
+ * 2. APP / UI LAYER: Spatial focus navigation engine (TVNav), Shelves, Cards, Modals.
+ * 3. ENGINES: GameEngine (timeline rhythm) and RunEngine (cadence/speed).
+ * 
+ * Bridges: window.TVBridge and window.TVNav exposed for Android Java WebView.
  */
 
 /* ==========================================================================
-   EDITABLE CONFIGURATION CONSTANTS (TUNABLE AT TOP)
+   CONFIG & SOUND SYNTHESIS
    ========================================================================== */
 
-export const UI = {
-  // Banner / Card fixed size (in px for 1920x1080 reference, applied to CSS)
-  banner: { width: 400, height: 225 }, // 16:9
-  bannerGap: 24,
-  entryTile: { width: 560, height: 315 },
-  rail: { collapsed: 96, expanded: 320 },
-  safeMarginPercent: 5 // 5% TV safe overscan
-};
+export const Snd = (() => {
+  let ctx = null;
+  let muted = false;
 
-export const INPUT_CONFIG = {
-  // Gamepad auto-repeat for navigation ONLY (steps are never repeated)
-  gamepad: {
-    repeatInitialDelayMs: 400,
-    repeatIntervalMs: 120,
-    stickDeadzone: 0.5
-  },
-  // Default calibration offset in ms
-  defaultCalibrationMs: 0
-};
-
-export const GAME_RULES_DEFAULT = {
-  maxLives: 3,
-  maxMisses: 5,
-  timingWindowMs: {
-    perfect: 120,
-    good: 300
-  },
-  scoring: {
-    perfect: 100,
-    good: 50,
-    comboMultiplierStep: 5,
-    maxMultiplier: 4
-  },
-  winCondition: "survive_to_end"
-};
-
-export const RUN_CONFIG_DEFAULT = {
-  referenceSpeedKmh: 8.0, // Speed for 1.0x video playback
-  defaultStrideM: 0.75,   // Average stride length
-  defaultWeightKg: 70,    // For MET calorie estimation
-  cadenceWindow: 6,       // Steps window for median cadence
-  idleTimeoutMs: 2500,    // Stop running after 2.5s without step
-  minStepIntervalMs: 150, // Reject bounce under 150ms
-  rateChangeMinDelayMs: 1200 // Minimum time between video playbackRate changes
-};
-
-// Simple i18n dictionary (French default, English supported)
-export const I18N = {
-  fr: {
-    appTitle: "FitTV Arena",
-    home: "Accueil",
-    games: "Jeux Rythme",
-    virtualRun: "Course Virtuelle",
-    cardio: "Sessions Cardio",
-    profile: "Profil",
-    settings: "Paramètres",
-    lockedCardio: "Bientôt disponible",
-    ready: "Prêt ?",
-    start: "Commencer",
-    pause: "Pause",
-    resume: "Reprendre",
-    restart: "Recommencer",
-    quit: "Quitter",
-    controlsHelp: "Aide Contrôles",
-    otherGenre: "Autres",
-    level: "Niveau",
-    bestScore: "Record",
-    bestTime: "Meilleur",
-    speed: "Vitesse",
-    pace: "Allure",
-    distance: "Distance",
-    time: "Temps",
-    steps: "Pas",
-    cadence: "Cadence",
-    rate: "Vidéo",
-    calories: "Calories",
-    perfect: "PARFAIT !",
-    good: "BIEN !",
-    miss: "RATÉ !",
-    gameover: "GAME OVER",
-    victory: "VICTOIRE !",
-    runCompleted: "Bravo ! Course Terminée !",
-    runSummary: "Récapitulatif de votre séance",
-    replay: "Rejouer",
-    backToList: "Retour à la liste",
-    exitPrompt: "Voulez-vous quitter FitTV Arena ?",
-    confirm: "Confirmer",
-    cancel: "Annuler",
-    themeLabel: "Thème d'affichage",
-    soundLabel: "Effets sonores",
-    calibrationLabel: "Calibrage latence (ms)",
-    calibrationTest: "Test battement",
-    strideLabel: "Longueur de foulée (m)",
-    weightLabel: "Poids (kg)",
-    simModeLabel: "Mode simulation pas (Alt+L/R)",
-    controllerConnected: "Manette connectée",
-    controllerDisconnected: "Manette déconnectée"
-  },
-  en: {
-    appTitle: "FitTV Arena",
-    home: "Home",
-    games: "Rhythm Games",
-    virtualRun: "Virtual Run",
-    cardio: "Cardio Sessions",
-    profile: "Profile",
-    settings: "Settings",
-    lockedCardio: "Coming soon",
-    ready: "Ready?",
-    start: "Start",
-    pause: "Pause",
-    resume: "Resume",
-    restart: "Restart",
-    quit: "Quit",
-    controlsHelp: "Controls Help",
-    otherGenre: "Other",
-    level: "Level",
-    bestScore: "Best",
-    bestTime: "Best Time",
-    speed: "Speed",
-    pace: "Pace",
-    distance: "Distance",
-    time: "Time",
-    steps: "Steps",
-    cadence: "Cadence",
-    rate: "Video Rate",
-    calories: "Calories",
-    perfect: "PERFECT!",
-    good: "GOOD!",
-    miss: "MISS!",
-    gameover: "GAME OVER",
-    victory: "VICTORY!",
-    runCompleted: "Great job! Run Completed!",
-    runSummary: "Workout Summary",
-    replay: "Play Again",
-    backToList: "Back to List",
-    exitPrompt: "Do you want to exit FitTV Arena?",
-    confirm: "Confirm",
-    cancel: "Cancel",
-    themeLabel: "Audience Theme",
-    soundLabel: "Sound Effects",
-    calibrationLabel: "Latency Calibration (ms)",
-    calibrationTest: "Beat Test",
-    strideLabel: "Stride Length (m)",
-    weightLabel: "Weight (kg)",
-    simModeLabel: "Step Simulation Mode (Alt+L/R)",
-    controllerConnected: "Controller connected",
-    controllerDisconnected: "Controller disconnected"
-  }
-};
-
-/* ==========================================================================
-   WEB AUDIO SYNTHESIZER (ZERO EXTERNAL ASSETS)
-   ========================================================================== */
-
-class SoundEngine {
-  constructor() {
-    this.ctx = null;
-    this.muted = false;
-  }
-
-  init() {
-    if (!this.ctx) {
+  function beep(f, d, vol = 0.08) {
+    if (muted) return;
+    try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) this.ctx = new AudioCtx();
+      if (!ctx && AudioCtx) ctx = new AudioCtx();
+      if (ctx && ctx.state === "suspended") ctx.resume();
+      if (!ctx) return;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = f;
+      o.type = "sine";
+      g.gain.setValueAtTime(vol, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + d);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + d);
+    } catch (_) {}
+  }
+
+  return {
+    get muted() { return muted; },
+    set muted(val) { muted = val; },
+    tick: () => beep(660, 0.04, 0.06),
+    ok: () => beep(880, 0.08, 0.1),
+    bump: () => beep(140, 0.08, 0.16),
+    step: () => beep(440, 0.04, 0.05),
+    success: (perfect = true) => {
+      beep(perfect ? 880 : 587, 0.12, 0.15);
+      if (perfect) setTimeout(() => beep(1320, 0.15, 0.15), 60);
+    },
+    fail: () => beep(180, 0.18, 0.18),
+    countdown: (num) => beep(num === 0 ? 880 : 440, 0.12, 0.18),
+    win: () => {
+      beep(523, 0.1, 0.15);
+      setTimeout(() => beep(659, 0.1, 0.15), 100);
+      setTimeout(() => beep(784, 0.25, 0.18), 200);
     }
-    if (this.ctx && this.ctx.state === "suspended") {
-      this.ctx.resume();
-    }
-  }
-
-  playNav() {
-    if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-    try {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(600, this.ctx.currentTime);
-      gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start();
-      osc.stop(this.ctx.currentTime + 0.05);
-    } catch (_) {}
-  }
-
-  playSuccess(isPerfect = true) {
-    if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-    try {
-      const t = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = isPerfect ? "triangle" : "sine";
-      osc.frequency.setValueAtTime(isPerfect ? 880 : 587.33, t);
-      osc.frequency.exponentialRampToValueAtTime(isPerfect ? 1320 : 880, t + 0.12);
-      gain.gain.setValueAtTime(0.2, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.18);
-    } catch (_) {}
-  }
-
-  playFail() {
-    if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-    try {
-      const t = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(160, t);
-      osc.frequency.linearRampToValueAtTime(90, t + 0.2);
-      gain.gain.setValueAtTime(0.18, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.22);
-    } catch (_) {}
-  }
-
-  playCountdown(count) {
-    if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-    try {
-      const t = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = "sine";
-      const freq = count === 0 ? 880 : 440;
-      const dur = count === 0 ? 0.35 : 0.12;
-      osc.frequency.setValueAtTime(freq, t);
-      gain.gain.setValueAtTime(0.25, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start(t);
-      osc.stop(t + dur);
-    } catch (_) {}
-  }
-
-  playWin() {
-    if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-    try {
-      const t = this.ctx.currentTime;
-      const notes = [523.25, 659.25, 783.99, 1046.50];
-      notes.forEach((freq, i) => {
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(freq, t + i * 0.1);
-        gain.gain.setValueAtTime(0.2, t + i * 0.1);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.35);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start(t + i * 0.1);
-        osc.stop(t + i * 0.1 + 0.35);
-      });
-    } catch (_) {}
-  }
-
-  playGameOver() {
-    if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-    try {
-      const t = this.ctx.currentTime;
-      const notes = [440, 415.3, 392, 349.2];
-      notes.forEach((freq, i) => {
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(freq, t + i * 0.18);
-        gain.gain.setValueAtTime(0.18, t + i * 0.18);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.18 + 0.3);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start(t + i * 0.18);
-        osc.stop(t + i * 0.18 + 0.3);
-      });
-    } catch (_) {}
-  }
-
-  playStep() {
-    if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
-    try {
-      const t = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(320, t);
-      osc.frequency.exponentialRampToValueAtTime(140, t + 0.06);
-      gain.gain.setValueAtTime(0.15, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.07);
-    } catch (_) {}
-  }
-}
-
-export const sounds = new SoundEngine();
+  };
+})();
 
 /* ==========================================================================
-   LAYER 1: INPUT LAYER & JAVA BRIDGE
-   Converts keyboard, remote and gamepad inputs into SEMANTIC EVENTS.
-   Exposes window.TVBridge and communicates with window.Android.
+   LAYER 1: EVENT BUS & INPUT LAYER
    ========================================================================== */
 
 class EventBus {
@@ -359,19 +86,12 @@ class EventBus {
     payload.name = eventName;
     if (this.listeners.has(eventName)) {
       for (const cb of this.listeners.get(eventName)) {
-        try {
-          cb(payload);
-        } catch (err) {
-          console.error(`Error in EventBus listener for ${eventName}:`, err);
-        }
+        try { cb(payload); } catch (err) { console.error(`EventBus ${eventName}:`, err); }
       }
     }
-    // Also trigger wildcards
     if (this.listeners.has("*")) {
       for (const cb of this.listeners.get("*")) {
-        try {
-          cb(payload);
-        } catch (_) {}
+        try { cb(payload); } catch (_) {}
       }
     }
   }
@@ -379,7 +99,7 @@ class EventBus {
 
 export const bus = new EventBus();
 
-// Expose TVBridge for Java WebView injection
+// Expose TVBridge for Android Java integration
 window.TVBridge = {
   dispatch(eventName, payload = {}) {
     bus.emit(eventName, payload);
@@ -389,7 +109,6 @@ window.TVBridge = {
   }
 };
 
-// Helper to notify Android Java container
 export function notifyAndroid(name, payload = {}) {
   try {
     if (window.Android && typeof window.Android.onAppEvent === "function") {
@@ -405,9 +124,8 @@ class InputLayer {
     this.gamepadConnected = false;
     this.gamepadIndex = null;
     this.buttonStates = new Map();
-    this.navRepeatTimers = new Map(); // buttonKey -> { initialTimer, repeatInterval }
+    this.navRepeatTimers = new Map();
     this.rafId = null;
-    this.activeScreen = "home";
   }
 
   init() {
@@ -421,10 +139,7 @@ class InputLayer {
     if (this.gamepadIndex === null) {
       this.gamepadIndex = e.gamepad.index;
       this.gamepadConnected = true;
-      document.getElementById("gp-status-dot")?.classList.add("active");
-      const label = document.getElementById("gp-status-label");
-      if (label) label.textContent = I18N[appState.lang].controllerConnected;
-      appUI.showToast(I18N[appState.lang].controllerConnected);
+      TVNav.toast("Manette connectée");
     }
   }
 
@@ -432,43 +147,26 @@ class InputLayer {
     if (this.gamepadIndex === e.gamepad.index) {
       this.gamepadIndex = null;
       this.gamepadConnected = false;
-      document.getElementById("gp-status-dot")?.classList.remove("active");
-      const label = document.getElementById("gp-status-label");
-      if (label) label.textContent = I18N[appState.lang].controllerDisconnected;
-      appUI.showToast(I18N[appState.lang].controllerDisconnected);
+      TVNav.toast("Manette déconnectée");
     }
   }
 
   handleKeyDown(e) {
-    // 1. FLOOR-MAT TRACKER / STEP INPUTS (Alt+R, Alt+L, or fallback R, L)
-    // IMPORTANT: Ignore key auto-repeat for steps, never affect focus system
+    // 1. FLOOR-MAT TRACKER / STEP INPUTS (Alt+R, Alt+L, fallback R, L)
     const isKeyR = e.code === "KeyR" || e.key === "r" || e.key === "R";
     const isKeyL = e.code === "KeyL" || e.key === "l" || e.key === "L";
 
-    if ((e.altKey && isKeyR) || (isKeyR && !e.ctrlKey && !e.metaKey && this.isNotTyping(e))) {
+    if ((e.altKey && isKeyR) || (isKeyR && !e.ctrlKey && !e.metaKey && this.isNotTyping())) {
       e.preventDefault();
       e.stopPropagation();
-      if (!e.repeat) {
-        bus.emit("STEP_RIGHT", { source: "keyboard", alt: e.altKey });
-      }
+      if (!e.repeat) bus.emit("STEP_RIGHT", { source: "keyboard", alt: e.altKey });
       return;
     }
 
-    if ((e.altKey && isKeyL) || (isKeyL && !e.ctrlKey && !e.metaKey && this.isNotTyping(e))) {
+    if ((e.altKey && isKeyL) || (isKeyL && !e.ctrlKey && !e.metaKey && this.isNotTyping())) {
       e.preventDefault();
       e.stopPropagation();
-      if (!e.repeat) {
-        bus.emit("STEP_LEFT", { source: "keyboard", alt: e.altKey });
-      }
-      return;
-    }
-
-    // If an on-screen keyboard or text input is active, allow normal keys
-    if (document.activeElement && document.activeElement.tagName === "INPUT") {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        bus.emit("OK", { source: "keyboard" });
-      }
+      if (!e.repeat) bus.emit("STEP_LEFT", { source: "keyboard", alt: e.altKey });
       return;
     }
 
@@ -519,8 +217,6 @@ class InputLayer {
       case "D":
         bus.emit("SLASH", { source: "keyboard" });
         break;
-      default:
-        break;
     }
 
     if (semanticEvent) {
@@ -529,7 +225,7 @@ class InputLayer {
     }
   }
 
-  isNotTyping(e) {
+  isNotTyping() {
     return !document.activeElement || document.activeElement.tagName !== "INPUT";
   }
 
@@ -552,33 +248,31 @@ class InputLayer {
         }
       }
     }
-
     if (!gp) return;
 
-    // Check Button Presses with Edge Detection
     const b = gp.buttons;
 
-    // STEPS (L1 = button 4, R1 = button 5) - NEVER auto-repeated!
+    // STEPS (L1 = button 4, R1 = button 5)
     this.checkButtonEdge(4, b[4]?.pressed, () => bus.emit("STEP_LEFT", { source: "gamepad" }));
     this.checkButtonEdge(5, b[5]?.pressed, () => bus.emit("STEP_RIGHT", { source: "gamepad" }));
 
     // Game Actions
-    this.checkButtonEdge(2, b[2]?.pressed, () => bus.emit("PUNCH", { source: "gamepad" })); // X = Punch
-    this.checkButtonEdge(3, b[3]?.pressed, () => bus.emit("SLASH", { source: "gamepad" })); // Y = Slash
-    this.checkButtonEdge(9, b[9]?.pressed, () => bus.emit("PAUSE", { source: "gamepad" })); // Start = Pause/Menu
+    this.checkButtonEdge(2, b[2]?.pressed, () => bus.emit("PUNCH", { source: "gamepad" }));
+    this.checkButtonEdge(3, b[3]?.pressed, () => bus.emit("SLASH", { source: "gamepad" }));
+    this.checkButtonEdge(9, b[9]?.pressed, () => bus.emit("PAUSE", { source: "gamepad" }));
 
     // OK / Back
     this.checkButtonEdge(0, b[0]?.pressed, () => {
       bus.emit("OK", { source: "gamepad" });
-      if (appState.inGame) bus.emit("JUMP", { source: "gamepad" }); // A is also Jump in game
+      if (appState.inGame) bus.emit("JUMP", { source: "gamepad" });
     });
     this.checkButtonEdge(1, b[1]?.pressed, () => bus.emit("BACK", { source: "gamepad" }));
 
-    // D-Pad and Stick Navigation with 400ms initial delay then 120ms repeat
-    const up = b[12]?.pressed || gp.axes[1] < -INPUT_CONFIG.gamepad.stickDeadzone;
-    const down = b[13]?.pressed || gp.axes[1] > INPUT_CONFIG.gamepad.stickDeadzone;
-    const left = b[14]?.pressed || gp.axes[0] < -INPUT_CONFIG.gamepad.stickDeadzone;
-    const right = b[15]?.pressed || gp.axes[0] > INPUT_CONFIG.gamepad.stickDeadzone;
+    // D-Pad and Left Stick
+    const up = b[12]?.pressed || gp.axes[1] < -0.5;
+    const down = b[13]?.pressed || gp.axes[1] > 0.5;
+    const left = b[14]?.pressed || gp.axes[0] < -0.5;
+    const right = b[15]?.pressed || gp.axes[0] > 0.5;
 
     this.checkNavRepeat("NAV_UP", up, () => {
       bus.emit("NAV_UP", { source: "gamepad" });
@@ -610,14 +304,13 @@ class InputLayer {
     const isCurrentlyActive = this.navRepeatTimers.has(name);
     if (pressed) {
       if (!isCurrentlyActive) {
-        // Initial press
         onAction();
         const initialTimer = setTimeout(() => {
           const repeatInterval = setInterval(() => {
             onAction();
-          }, INPUT_CONFIG.gamepad.repeatIntervalMs);
+          }, 120);
           this.navRepeatTimers.set(name, { repeatInterval });
-        }, INPUT_CONFIG.gamepad.repeatInitialDelayMs);
+        }, 400);
         this.navRepeatTimers.set(name, { initialTimer });
       }
     } else {
@@ -634,13 +327,11 @@ class InputLayer {
 export const inputLayer = new InputLayer();
 
 /* ==========================================================================
-   LAYER 2: APP / UI LAYER
-   Spatial Focus Navigation, Shelves, Fixed Banners, Themes, On-Screen Keyboard.
+   LAYER 2: APP STATE & REFERENCE SPATIAL NAVIGATION (TVNav)
    ========================================================================== */
 
 class AppState {
   constructor() {
-    this.lang = "fr";
     this.inGame = false;
     this.inRun = false;
     this.simMode = false;
@@ -655,7 +346,7 @@ class AppState {
     }
     return {
       playerName: "Champion TV",
-      theme: "adult", // "kids" | "adult" | "pro"
+      theme: "adult",
       strideLengthM: 0.75,
       weightKg: 70,
       bestScores: {},
@@ -665,403 +356,562 @@ class AppState {
 
   saveProfile() {
     localStorage.setItem("fittv_profile", JSON.stringify(this.profile));
-    this.applyTheme(this.profile.theme);
-  }
-
-  applyTheme(themeName) {
-    document.body.className = `theme-${themeName || "adult"}`;
+    document.body.className = `theme-${this.profile.theme || "adult"}`;
   }
 }
 
 export const appState = new AppState();
 
-/**
- * 2D Spatial Focus Navigation Engine
- * YouTube TV style with 1.08 scale, 4px white ring, and memory per shelf.
- */
-class SpatialFocusManager {
-  constructor() {
-    this.currentFocused = null;
-    this.historyPerScreen = new Map(); // screenId -> element
-    this.shelfColumnHistory = new Map(); // shelfElement -> columnIndex
-    this.isRailFocused = false;
+function isVisible(el) {
+  if (!el || el.hidden) return false;
+  const style = window.getComputedStyle(el);
+  return style.display !== "none" && style.visibility !== "hidden" && el.offsetParent !== null;
+}
+
+export const TVNav = (() => {
+  const S = {
+    cur: null,
+    last: null,
+    col: 0,
+    lastContent: null,
+    screen: "home",
+    prev: []
+  };
+
+  function dbg(text) {
+    const el = document.getElementById("dbg");
+    if (el) el.textContent = text;
   }
 
-  init() {
-    bus.on("NAV_UP", () => this.move("UP"));
-    bus.on("NAV_DOWN", () => this.move("DOWN"));
-    bus.on("NAV_LEFT", () => this.move("LEFT"));
-    bus.on("NAV_RIGHT", () => this.move("RIGHT"));
-    bus.on("OK", () => this.triggerOk());
-    bus.on("BACK", () => this.triggerBack());
-    bus.on("MENU", () => appUI.openControlsHelp());
+  function toast(msg) {
+    const t = document.getElementById("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.add("on");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("on"), 2200);
   }
 
-  getFocusables(container = document) {
-    // If a modal dialog is open, trap focus strictly inside that dialog!
-    const openModal = document.querySelector(".modal-overlay.open");
-    const scope = openModal || container;
-    return Array.from(scope.querySelectorAll('[data-focusable="true"]'))
-      .filter(el => {
-        const style = window.getComputedStyle(el);
-        return style.display !== "none" && style.visibility !== "hidden" && el.offsetParent !== null;
-      });
-  }
-
-  setFocus(el, shouldScroll = true) {
+  function setFocus(el, playSnd = true) {
     if (!el) return;
-    if (this.currentFocused) {
-      this.currentFocused.removeAttribute("data-focused");
-    }
-    this.currentFocused = el;
-    el.setAttribute("data-focused", "true");
-    sounds.playNav();
+    if (S.cur) S.cur.classList.remove("is-focused");
+    S.last = S.cur;
+    S.cur = el;
+    el.classList.add("is-focused");
 
-    // Check if rail is focused
-    const rail = document.getElementById("nav-rail");
-    this.isRailFocused = el.classList.contains("rail-btn");
-    if (this.isRailFocused) {
-      rail?.classList.add("expanded");
+    const onRail = !!el.closest("#rail");
+    const rail = document.getElementById("rail");
+    if (onRail) {
+      rail?.classList.add("open");
     } else {
-      rail?.classList.remove("expanded");
+      rail?.classList.remove("open");
+      S.lastContent = el;
     }
 
-    if (shouldScroll) {
-      this.ensureVisible(el);
+    reveal(el);
+    if (playSnd) Snd.tick();
+
+    const tag = el.dataset.action || el.dataset.target || el.dataset.screen || el.className;
+    dbg(`Focus: [${tag}]\nScreen: ${S.screen} | Col: ${S.col}`);
+  }
+
+  function reveal(el) {
+    // 1. Horizontal smooth track reveal
+    const vp = el.closest(".viewport");
+    if (vp) {
+      const track = el.closest(".track");
+      if (track) {
+        const P = 24 * (window.innerWidth / 1920);
+        const W = vp.clientWidth - 2 * P;
+        const left = el.offsetLeft;
+        const w = el.offsetWidth;
+        let off = left - (W - w) / 2;
+        const max = Math.max(0, track.scrollWidth - vp.clientWidth);
+        off = Math.max(0, Math.min(off, max));
+        track.style.transform = `translateX(-${off}px)`;
+      }
+    }
+
+    // 2. Vertical shelves scroll
+    const shelf = el.closest(".shelf");
+    const wrap = el.closest(".wrap");
+    if (shelf && wrap) {
+      const shelves = wrap.querySelector(".shelves");
+      if (shelves) {
+        const shelfTop = shelf.offsetTop;
+        const targetY = Math.max(0, shelfTop - 40 * (window.innerWidth / 1920));
+        shelves.style.transform = `translateY(-${targetY}px)`;
+      }
     }
   }
 
-  ensureVisible(el) {
-    // 1. Horizontal Shelf Scrolling (Smooth Programmatic Scroll)
-    const shelfTrack = el.closest(".shelf-track");
-    if (shelfTrack) {
-      const cards = Array.from(shelfTrack.children);
-      const index = cards.indexOf(el);
-      const shelfRow = el.closest(".shelf-row");
-      if (shelfRow) this.shelfColumnHistory.set(shelfRow, index);
-
-      // Card width + gap
-      const step = UI.banner.width + UI.bannerGap;
-      const targetScroll = Math.max(0, (index - 1) * step);
-      shelfTrack.style.transform = `translateX(-${targetScroll}px)`;
-    }
-
-    // 2. Vertical Shelves Scroller: Put active shelf in upper third of the screen
-    const shelfRow = el.closest(".shelf-row");
-    const container = el.closest(".shelves-container");
-    if (shelfRow && container) {
-      const shelves = Array.from(container.querySelectorAll(".shelf-row"));
-      const rowIndex = shelves.indexOf(shelfRow);
-      const rowHeight = UI.banner.height + 90; // row height approx
-      const targetY = Math.max(0, rowIndex * rowHeight);
-      container.style.transform = `translateY(-${targetY}px)`;
-    }
+  function bump(el) {
+    if (!el) return;
+    el.classList.remove("bump");
+    void el.offsetWidth;
+    el.classList.add("bump");
+    Snd.bump();
   }
 
-  move(direction) {
-    if (appState.inGame || appState.inRun) {
-      // In video mode, only pause menu dialog takes spatial focus
-      const openModal = document.querySelector(".modal-overlay.open");
-      if (!openModal) return;
+  function move(dirX, dirY) {
+    if (!S.cur) {
+      const first = document.querySelector('.screen:not([hidden]) [data-focusable]') || document.querySelector('#rail [data-focusable]');
+      if (first) setFocus(first);
+      return;
     }
 
+    // Modal trap: if exit dialog is open, restrict navigation strictly inside it
+    const exitDialog = document.getElementById("dialog");
+    if (exitDialog && !exitDialog.hidden) {
+      const btns = Array.from(exitDialog.querySelectorAll("[data-focusable]")).filter(isVisible);
+      const i = btns.indexOf(S.cur);
+      if (dirX !== 0) {
+        const nextI = i + dirX;
+        if (nextI >= 0 && nextI < btns.length) setFocus(btns[nextI]);
+        else bump(S.cur);
+      }
+      return;
+    }
+
+    // Check open modal overlays (pause, controls, osk, summary)
     const openModal = document.querySelector(".modal-overlay.open");
-    const current = this.currentFocused || this.getFocusables()[0];
-    if (!current) return;
-
-    // SPECIAL RULE: Nav Rail Interaction
-    if (this.isRailFocused) {
-      if (direction === "UP" || direction === "DOWN") {
-        const railItems = Array.from(document.querySelectorAll("#nav-rail .rail-btn"));
-        const idx = railItems.indexOf(current);
-        const nextIdx = direction === "UP" ? Math.max(0, idx - 1) : Math.min(railItems.length - 1, idx + 1);
-        this.setFocus(railItems[nextIdx]);
-        return;
-      } else if (direction === "RIGHT") {
-        // Return from rail into current screen's content
-        const screen = document.querySelector(".screen.active");
-        if (screen) {
-          const focusables = this.getFocusables(screen);
-          if (focusables.length > 0) {
-            this.setFocus(focusables[0]);
-            return;
+    if (openModal) {
+      const modalZones = Array.from(openModal.querySelectorAll("[data-zone]")).filter(isVisible);
+      const currentZone = S.cur.closest("[data-zone]");
+      if (currentZone && modalZones.includes(currentZone)) {
+        const items = Array.from(currentZone.querySelectorAll("[data-focusable]")).filter(isVisible);
+        const i = items.indexOf(S.cur);
+        if (dirX !== 0) {
+          const nextI = i + dirX;
+          if (nextI >= 0 && nextI < items.length) setFocus(items[nextI]);
+          else bump(S.cur);
+          return;
+        }
+        if (dirY !== 0 && modalZones.length > 1) {
+          const zIdx = modalZones.indexOf(currentZone);
+          const nextZ = modalZones[zIdx + dirY];
+          if (nextZ) {
+            const nextItems = Array.from(nextZ.querySelectorAll("[data-focusable]")).filter(isVisible);
+            if (nextItems.length) setFocus(nextItems[Math.min(i, nextItems.length - 1)]);
+          } else {
+            bump(S.cur);
           }
+          return;
         }
       }
       return;
     }
 
-    // SPECIAL RULE: Left edge of shelf row goes to left rail!
-    if (direction === "LEFT" && !openModal) {
-      const shelfTrack = current.closest(".shelf-track");
-      if (shelfTrack) {
-        const cards = Array.from(shelfTrack.children);
-        if (cards.indexOf(current) === 0) {
-          // Move focus to currently active rail button
-          const activeRailBtn = document.querySelector("#nav-rail .rail-btn.active") || document.querySelector("#nav-rail .rail-btn");
-          if (activeRailBtn) {
-            this.setFocus(activeRailBtn);
-            return;
+    // Normal Screen / Shelf Navigation
+    const currentZone = S.cur.closest("[data-zone]");
+    if (!currentZone) return;
+    const dir = currentZone.dataset.dir || "h";
+
+    // HORIZONTAL MOVE
+    if (dirX !== 0) {
+      if (dir === "h") {
+        const items = Array.from(currentZone.querySelectorAll("[data-focusable]")).filter(isVisible);
+        const i = items.indexOf(S.cur);
+        if (dirX < 0) {
+          if (i === 0) {
+            // Left edge in content -> move to active rail button!
+            const onRail = !!S.cur.closest("#rail");
+            if (!onRail) {
+              const activeRail = document.querySelector("#rail .rail-item.active") || document.querySelector("#rail [data-focusable]");
+              if (activeRail) setFocus(activeRail);
+            } else {
+              bump(S.cur);
+            }
+          } else if (i > 0) {
+            S.col = i - 1;
+            setFocus(items[i - 1]);
+          }
+        } else if (dirX > 0) {
+          if (i === items.length - 1) {
+            bump(S.cur);
+          } else if (i < items.length - 1) {
+            S.col = i + 1;
+            setFocus(items[i + 1]);
+          }
+        }
+      } else if (dir === "v") {
+        // We are on rail
+        if (dirX > 0) {
+          // Move right into screen content
+          const target = (S.lastContent && isVisible(S.lastContent))
+            ? S.lastContent
+            : document.querySelector(".screen:not([hidden]) [data-focusable]");
+          if (target) setFocus(target);
+          else bump(S.cur);
+        } else {
+          bump(S.cur);
+        }
+      }
+      return;
+    }
+
+    // VERTICAL MOVE
+    if (dirY !== 0) {
+      if (dir === "v") {
+        // Moving up/down inside rail
+        const items = Array.from(currentZone.querySelectorAll("[data-focusable]")).filter(isVisible);
+        const i = items.indexOf(S.cur);
+        const nextI = i + dirY;
+        if (nextI < 0 || nextI >= items.length) {
+          bump(S.cur);
+        } else {
+          setFocus(items[nextI]);
+        }
+      } else {
+        // Moving between shelves in active screen
+        const currentScreen = S.cur.closest(".screen");
+        if (!currentScreen) return;
+        const shelvesZones = Array.from(currentScreen.querySelectorAll("[data-zone]")).filter(isVisible);
+        const zIdx = shelvesZones.indexOf(currentZone);
+        const nextZIdx = zIdx + dirY;
+        if (nextZIdx < 0 || nextZIdx >= shelvesZones.length) {
+          bump(S.cur);
+        } else {
+          const nextZone = shelvesZones[nextZIdx];
+          const nextItems = Array.from(nextZone.querySelectorAll("[data-focusable]")).filter(isVisible);
+          if (nextItems.length > 0) {
+            const targetCol = Math.min(S.col, nextItems.length - 1);
+            setFocus(nextItems[targetCol]);
           }
         }
       }
-      // If home tiles, first tile goes to rail
-      if (current.classList.contains("entry-tile")) {
-        const tiles = Array.from(document.querySelectorAll(".home-tiles-row .entry-tile"));
-        if (tiles.indexOf(current) === 0) {
-          const activeRailBtn = document.querySelector("#nav-rail .rail-btn.active") || document.querySelector("#nav-rail .rail-btn");
-          if (activeRailBtn) {
-            this.setFocus(activeRailBtn);
-            return;
+    }
+  }
+
+  function activate(el = S.cur) {
+    if (!el) return;
+    Snd.ok();
+
+    // 1. Rail button activation
+    if (el.classList.contains("rail-item")) {
+      const scr = el.dataset.screen;
+      if (scr) {
+        show(scr);
+        // Step into screen content immediately
+        setTimeout(() => {
+          const firstInScreen = document.querySelector(`.screen[data-screen="${scr}"]:not([hidden]) [data-focusable]`);
+          if (firstInScreen) setFocus(firstInScreen);
+        }, 50);
+      }
+      return;
+    }
+
+    // 2. Data Actions
+    const action = el.dataset.action;
+    switch (action) {
+      case "goto": {
+        const target = el.dataset.target;
+        if (target) show(target);
+        break;
+      }
+      case "locked": {
+        toast("Séance verrouillée - Bientôt disponible");
+        break;
+      }
+      case "game": {
+        const file = el.dataset.file;
+        const g = appUI.gamesData.find(x => x._filename === file);
+        if (g) gameEngine.start(g);
+        break;
+      }
+      case "run": {
+        const file = el.dataset.file;
+        const r = appUI.runsData.find(x => x._filename === file);
+        if (r) runEngine.start(r);
+        break;
+      }
+      case "stay": {
+        const dlg = document.getElementById("dialog");
+        if (dlg) dlg.hidden = true;
+        setFocus(S.lastContent || document.querySelector('#rail .rail-item.active'));
+        break;
+      }
+      case "exit": {
+        toast("Au revoir !");
+        try {
+          if (window.Android && typeof window.Android.closeApp === "function") {
+            window.Android.closeApp();
+          } else {
+            window.close();
           }
+        } catch (_) {}
+        break;
+      }
+      case "resume": {
+        appUI.closeModal("modal-pause");
+        if (videoController.player) videoController.player.playVideo();
+        break;
+      }
+      case "restart": {
+        appUI.closeModal("modal-pause");
+        if (appState.inGame && gameEngine.currentGame) gameEngine.start(gameEngine.currentGame);
+        else if (appState.inRun && runEngine.currentRun) runEngine.start(runEngine.currentRun);
+        break;
+      }
+      case "help":
+      case "show-controls": {
+        appUI.openModal("modal-controls-help");
+        break;
+      }
+      case "close-controls": {
+        appUI.closeModal("modal-controls-help");
+        break;
+      }
+      case "quit": {
+        appUI.closeModal("modal-pause");
+        gameEngine.stop();
+        runEngine.stop();
+        videoController.stop();
+        document.getElementById("video-stage")?.classList.remove("active");
+        show("home");
+        break;
+      }
+      case "edit-name": {
+        osk.open(appState.profile.playerName, (newName) => {
+          appState.profile.playerName = newName || "Joueur TV";
+          const display = document.getElementById("profile-name-display");
+          if (display) display.textContent = appState.profile.playerName;
+          appState.saveProfile();
+          toast(`Nom mis à jour: ${appState.profile.playerName}`);
+        });
+        break;
+      }
+      case "stride-minus": {
+        appState.profile.strideLengthM = Math.max(0.4, Number((appState.profile.strideLengthM - 0.05).toFixed(2)));
+        const strideEl = document.getElementById("profile-stride-val");
+        if (strideEl) strideEl.textContent = `${appState.profile.strideLengthM.toFixed(2)} m`;
+        appState.saveProfile();
+        break;
+      }
+      case "stride-plus": {
+        appState.profile.strideLengthM = Math.min(1.5, Number((appState.profile.strideLengthM + 0.05).toFixed(2)));
+        const strideEl = document.getElementById("profile-stride-val");
+        if (strideEl) strideEl.textContent = `${appState.profile.strideLengthM.toFixed(2)} m`;
+        appState.saveProfile();
+        break;
+      }
+      case "toggle-sound": {
+        Snd.muted = !Snd.muted;
+        el.textContent = Snd.muted ? "Désactivé (Muet)" : "Activé";
+        toast(Snd.muted ? "Son coupé" : "Son activé");
+        break;
+      }
+      case "cal-minus": {
+        appState.calibrationMs = Math.max(-300, appState.calibrationMs - 20);
+        const calEl = document.getElementById("cal-offset-val");
+        if (calEl) calEl.textContent = `${appState.calibrationMs} ms`;
+        break;
+      }
+      case "cal-plus": {
+        appState.calibrationMs = Math.min(300, appState.calibrationMs + 20);
+        const calEl = document.getElementById("cal-offset-val");
+        if (calEl) calEl.textContent = `${appState.calibrationMs} ms`;
+        break;
+      }
+      case "cal-test": {
+        Snd.countdown(0);
+        toast(`Test synchronisation (${appState.calibrationMs}ms)`);
+        break;
+      }
+      case "toggle-sim": {
+        appState.simMode = !appState.simMode;
+        el.textContent = appState.simMode ? "Activé (Alt+L/R)" : "Désactivé";
+        document.getElementById("sim-debug-canvas")?.classList.toggle("show", appState.simMode);
+        toast(appState.simMode ? "Mode simulation activé" : "Mode simulation désactivé");
+        break;
+      }
+      case "replay": {
+        appUI.closeModal("modal-summary");
+        if (appState.inGame && gameEngine.currentGame) gameEngine.start(gameEngine.currentGame);
+        else if (appState.inRun && runEngine.currentRun) runEngine.start(runEngine.currentRun);
+        break;
+      }
+      case "back-to-sessions": {
+        appUI.closeModal("modal-summary");
+        document.getElementById("video-stage")?.classList.remove("active");
+        show(appState.inGame ? "games" : "runs");
+        break;
+      }
+      default: {
+        // Theme buttons
+        if (el.classList.contains("theme-selector-btn")) {
+          const theme = el.dataset.theme;
+          appState.profile.theme = theme;
+          appState.saveProfile();
+          document.querySelectorAll(".theme-selector-btn").forEach(b => b.classList.toggle("active", b.dataset.theme === theme));
+          toast(`Thème: ${theme.toUpperCase()}`);
         }
       }
     }
-
-    // SPECIAL RULE: UP/DOWN across shelves lands on same column index when possible
-    if ((direction === "UP" || direction === "DOWN") && !openModal) {
-      const currentShelfRow = current.closest(".shelf-row");
-      const container = current.closest(".shelves-container");
-      if (currentShelfRow && container) {
-        const shelves = Array.from(container.querySelectorAll(".shelf-row"));
-        const currentShelfIndex = shelves.indexOf(currentShelfRow);
-        const nextShelfIndex = direction === "UP" ? currentShelfIndex - 1 : currentShelfIndex + 1;
-        if (nextShelfIndex >= 0 && nextShelfIndex < shelves.length) {
-          const nextShelf = shelves[nextShelfIndex];
-          const nextCards = Array.from(nextShelf.querySelectorAll('[data-focusable="true"]'));
-          const currentTrack = current.closest(".shelf-track");
-          const currentCol = currentTrack ? Array.from(currentTrack.children).indexOf(current) : 0;
-          const targetCol = Math.min(currentCol, nextCards.length - 1);
-          if (nextCards[targetCol]) {
-            this.setFocus(nextCards[targetCol]);
-            return;
-          }
-        }
-      }
-    }
-
-    // Default 2D Spatial Search
-    const candidates = this.getFocusables(openModal || undefined).filter(el => el !== current);
-    const best = this.findNearest(current, candidates, direction);
-    if (best) {
-      this.setFocus(best);
-    }
   }
 
-  findNearest(current, candidates, direction) {
-    const cRect = current.getBoundingClientRect();
-    const cCenter = { x: cRect.left + cRect.width / 2, y: cRect.top + cRect.height / 2 };
-
-    let closest = null;
-    let minScore = Infinity;
-
-    for (const cand of candidates) {
-      const r = cand.getBoundingClientRect();
-      const candCenter = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-
-      const dx = candCenter.x - cCenter.x;
-      const dy = candCenter.y - cCenter.y;
-
-      // Filter by direction quadrant
-      let isEligible = false;
-      let primaryDist = 0;
-      let secondaryDist = 0;
-
-      switch (direction) {
-        case "UP":
-          isEligible = dy < -5;
-          primaryDist = -dy;
-          secondaryDist = Math.abs(dx);
-          break;
-        case "DOWN":
-          isEligible = dy > 5;
-          primaryDist = dy;
-          secondaryDist = Math.abs(dx);
-          break;
-        case "LEFT":
-          isEligible = dx < -5;
-          primaryDist = -dx;
-          secondaryDist = Math.abs(dy);
-          break;
-        case "RIGHT":
-          isEligible = dx > 5;
-          primaryDist = dx;
-          secondaryDist = Math.abs(dy);
-          break;
-      }
-
-      if (!isEligible) continue;
-
-      // Distance score: penalize perpendicular alignment
-      const score = primaryDist + secondaryDist * 2.2;
-      if (score < minScore) {
-        minScore = score;
-        closest = cand;
-      }
+  function back() {
+    // 1. Exit dialog open
+    const dlg = document.getElementById("dialog");
+    if (dlg && !dlg.hidden) {
+      dlg.hidden = true;
+      setFocus(S.lastContent || document.querySelector("#rail .rail-item.active"));
+      return;
     }
 
-    return closest;
-  }
-
-  triggerOk() {
-    if (this.currentFocused) {
-      this.currentFocused.click();
-    }
-  }
-
-  triggerBack() {
-    // 1. If modal open, close modal
+    // 2. Open modal overlay
     const openModal = document.querySelector(".modal-overlay.open");
     if (openModal) {
       appUI.closeModal(openModal.id);
       return;
     }
 
-    // 2. If in video mode, open Pause dialog
+    // 3. Video stage active
     if (appState.inGame || appState.inRun) {
       appUI.openPauseMenu();
       return;
     }
 
-    // 3. If in screen content, move focus to rail
-    if (!this.isRailFocused) {
-      const activeRailBtn = document.querySelector("#nav-rail .rail-btn.active") || document.querySelector("#nav-rail .rail-btn");
-      if (activeRailBtn) {
-        this.setFocus(activeRailBtn);
+    // 4. Focus in screen content -> move back to active rail button
+    const onRail = !!S.cur?.closest("#rail");
+    if (!onRail) {
+      const activeRail = document.querySelector("#rail .rail-item.active") || document.querySelector("#rail [data-focusable]");
+      if (activeRail) {
+        setFocus(activeRail);
         return;
       }
     }
 
-    // 4. On Home screen, BACK prompts to exit
-    if (appUI.currentScreenId === "screen-home") {
-      appUI.openExitDialog();
+    // 5. Already on rail: if not home, go to home; if on home, open exit dialog
+    if (S.screen !== "home") {
+      show("home");
     } else {
-      appUI.navigateScreen("home");
+      if (dlg) {
+        dlg.hidden = false;
+        const firstBtn = dlg.querySelector("[data-focusable]");
+        if (firstBtn) setFocus(firstBtn);
+      }
     }
   }
-}
 
-export const focusManager = new SpatialFocusManager();
+  function show(screenId) {
+    document.querySelectorAll(".screen").forEach(s => s.hidden = true);
+    const target = document.getElementById(`sh-${screenId}`);
+    if (target) target.hidden = false;
 
-/**
- * Main UI Controller: Screens, Shelves, On-Screen Keyboard, Dialogs
- */
+    document.querySelectorAll("#rail .rail-item").forEach(b => {
+      b.classList.toggle("active", b.dataset.screen === screenId);
+    });
+
+    S.screen = screenId;
+    notifyAndroid("SCREEN_CHANGED", { screen: screenId });
+
+    setTimeout(() => {
+      const first = target?.querySelector("[data-focusable]");
+      if (first && !S.cur?.closest("#rail")) setFocus(first);
+    }, 50);
+  }
+
+  return {
+    state: S,
+    setFocus,
+    reveal,
+    bump,
+    move,
+    activate,
+    back,
+    show,
+    toast
+  };
+})();
+
+// Also expose TVNav on window for test suites and Android WebView
+window.TVNav = TVNav;
+
+/* ==========================================================================
+   UI CONTROLLER & CONTENT LOADER (5.1 JSON CONTRACT)
+   ========================================================================== */
+
 class AppUI {
   constructor() {
-    this.currentScreenId = "screen-home";
     this.gamesData = [];
     this.runsData = [];
   }
 
   async init() {
-    this.setupRailNavigation();
-    this.setupHomeTiles();
-    this.setupDialogs();
-    this.setupSettingsScreen();
-    this.setupProfileScreen();
+    this.bindBusEvents();
+    this.setupRailEvents();
+    this.setupFeetFlash();
 
-    // Load content manifests
+    // Fetch games & virtual runs
     await Promise.all([this.loadGames(), this.loadRuns()]);
 
-    // Apply stored theme
-    appState.applyTheme(appState.profile.theme);
-
-    // Initial focus on first Home entry tile
-    const firstTile = document.querySelector(".home-tiles-row .entry-tile");
-    if (firstTile) focusManager.setFocus(firstTile);
+    // Initial focus on first home tile
+    const firstTile = document.querySelector("#sh-home [data-focusable]");
+    if (firstTile) TVNav.setFocus(firstTile, false);
   }
 
-  setupRailNavigation() {
-    const railBtns = document.querySelectorAll("#nav-rail .rail-btn");
-    railBtns.forEach(btn => {
-      btn.addEventListener("click", () => {
-        const target = btn.dataset.target;
-        if (target === "cardio") {
-          this.showToast(I18N[appState.lang].lockedCardio);
-          return;
-        }
-        this.navigateScreen(target);
-      });
+  bindBusEvents() {
+    bus.on("NAV_UP", () => TVNav.move(0, -1));
+    bus.on("NAV_DOWN", () => TVNav.move(0, 1));
+    bus.on("NAV_LEFT", () => TVNav.move(-1, 0));
+    bus.on("NAV_RIGHT", () => TVNav.move(1, 0));
+    bus.on("OK", () => TVNav.activate());
+    bus.on("BACK", () => TVNav.back());
+    bus.on("MENU", () => this.openModal("modal-controls-help"));
+    bus.on("PAUSE", () => {
+      if (appState.inGame || appState.inRun) this.openPauseMenu();
     });
   }
 
-  setupHomeTiles() {
-    document.getElementById("tile-games")?.addEventListener("click", () => this.navigateScreen("games"));
-    document.getElementById("tile-runs")?.addEventListener("click", () => this.navigateScreen("runs"));
-    document.getElementById("tile-cardio")?.addEventListener("click", () => {
-      this.showToast(I18N[appState.lang].lockedCardio);
+  setupRailEvents() {
+    document.querySelectorAll("#rail .rail-item").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        TVNav.activate(btn);
+      });
+    });
+
+    // Native mouse clicks support for all data-focusable
+    document.addEventListener("click", (e) => {
+      const target = e.target.closest("[data-focusable]");
+      if (target) TVNav.activate(target);
     });
   }
 
-  navigateScreen(screenKey) {
-    const screenMap = {
-      home: "screen-home",
-      games: "screen-games",
-      runs: "screen-runs",
-      profile: "screen-profile",
-      settings: "screen-settings"
-    };
+  setupFeetFlash() {
+    const fl = document.getElementById("fl");
+    const fr = document.getElementById("fr");
 
-    const targetId = screenMap[screenKey] || "screen-home";
-    document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
-    const targetScreen = document.getElementById(targetId);
-    if (targetScreen) {
-      targetScreen.classList.add("active");
-      this.currentScreenId = targetId;
-      notifyAndroid("SCREEN_CHANGED", { screen: screenKey });
+    bus.on("STEP_LEFT", () => {
+      if (fl) {
+        fl.classList.add("on");
+        setTimeout(() => fl.classList.remove("on"), 160);
+      }
+    });
 
-      // Update active state in rail
-      document.querySelectorAll("#nav-rail .rail-btn").forEach(b => {
-        b.classList.toggle("active", b.dataset.target === screenKey);
-      });
-
-      // Set focus to first interactive card/control in screen
-      setTimeout(() => {
-        const firstFocus = targetScreen.querySelector('[data-focusable="true"]');
-        if (firstFocus) focusManager.setFocus(firstFocus);
-      }, 50);
-    }
+    bus.on("STEP_RIGHT", () => {
+      if (fr) {
+        fr.classList.add("on");
+        setTimeout(() => fr.classList.remove("on"), 160);
+      }
+    });
   }
 
-  showToast(message, durationMs = 3000) {
-    const container = document.getElementById("toast-container");
-    if (!container) return;
-    const toast = document.createElement("div");
-    toast.className = "toast";
-    toast.textContent = message;
-    container.appendChild(toast);
-    setTimeout(() => {
-      toast.style.opacity = "0";
-      setTimeout(() => toast.remove(), 250);
-    }, durationMs);
+  openModal(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add("open");
+    const firstBtn = el.querySelector("[data-focusable]");
+    if (firstBtn) TVNav.setFocus(firstBtn);
   }
 
-  openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
-    modal.classList.add("open");
-    const firstBtn = modal.querySelector('[data-focusable="true"]');
-    if (firstBtn) focusManager.setFocus(firstBtn);
-  }
-
-  closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
-    modal.classList.remove("open");
-    // Return focus to active screen content
-    const screen = document.getElementById(this.currentScreenId);
-    if (screen) {
-      const candidate = screen.querySelector('[data-focusable="true"]');
-      if (candidate) focusManager.setFocus(candidate);
-    }
-  }
-
-  openControlsHelp() {
-    this.openModal("modal-controls-help");
-  }
-
-  openExitDialog() {
-    this.openModal("modal-exit");
+  closeModal(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove("open");
+    const candidate = document.querySelector(".screen:not([hidden]) [data-focusable]");
+    if (candidate) TVNav.setFocus(candidate);
   }
 
   openPauseMenu() {
@@ -1069,325 +919,23 @@ class AppUI {
     this.openModal("modal-pause");
   }
 
-  setupDialogs() {
-    // Controls Help modal close button
-    document.getElementById("btn-close-controls")?.addEventListener("click", () => {
-      this.closeModal("modal-controls-help");
-    });
-
-    // Exit confirm modal buttons
-    document.getElementById("btn-exit-cancel")?.addEventListener("click", () => {
-      this.closeModal("modal-exit");
-    });
-    document.getElementById("btn-exit-confirm")?.addEventListener("click", () => {
-      this.showToast("Au revoir !");
-      try {
-        if (window.Android && typeof window.Android.closeApp === "function") {
-          window.Android.closeApp();
-        } else {
-          window.close();
-        }
-      } catch (_) {}
-    });
-
-    // Pause menu buttons
-    document.getElementById("btn-pause-resume")?.addEventListener("click", () => {
-      this.closeModal("modal-pause");
-      if (videoController.player) videoController.player.playVideo();
-    });
-    document.getElementById("btn-pause-restart")?.addEventListener("click", () => {
-      this.closeModal("modal-pause");
-      if (appState.inGame && gameEngine.currentGame) {
-        gameEngine.start(gameEngine.currentGame);
-      } else if (appState.inRun && runEngine.currentRun) {
-        runEngine.start(runEngine.currentRun);
-      }
-    });
-    document.getElementById("btn-pause-controls")?.addEventListener("click", () => {
-      this.closeModal("modal-pause");
-      this.openControlsHelp();
-    });
-    document.getElementById("btn-pause-quit")?.addEventListener("click", () => {
-      this.closeModal("modal-pause");
-      gameEngine.stop();
-      runEngine.stop();
-      videoController.stop();
-      document.getElementById("video-stage")?.classList.remove("active");
-      this.navigateScreen("home");
-    });
-  }
-
-  setupSettingsScreen() {
-    // Mute toggle
-    const muteBtn = document.getElementById("btn-setting-sound");
-    if (muteBtn) {
-      muteBtn.addEventListener("click", () => {
-        sounds.muted = !sounds.muted;
-        muteBtn.textContent = sounds.muted ? "Désactivé (Muet)" : "Activé";
-        this.showToast(sounds.muted ? "Son coupé" : "Son activé");
-      });
-    }
-
-    // Calibration Offset
-    const calVal = document.getElementById("cal-offset-val");
-    document.getElementById("btn-cal-minus")?.addEventListener("click", () => {
-      appState.calibrationMs = Math.max(-300, appState.calibrationMs - 20);
-      if (calVal) calVal.textContent = `${appState.calibrationMs} ms`;
-    });
-    document.getElementById("btn-cal-plus")?.addEventListener("click", () => {
-      appState.calibrationMs = Math.min(300, appState.calibrationMs + 20);
-      if (calVal) calVal.textContent = `${appState.calibrationMs} ms`;
-    });
-    document.getElementById("btn-cal-test")?.addEventListener("click", () => {
-      sounds.playCountdown(0);
-      this.showToast(`Test de synchro (${appState.calibrationMs}ms)`);
-    });
-
-    // Language toggle
-    const langBtn = document.getElementById("btn-setting-lang");
-    if (langBtn) {
-      langBtn.addEventListener("click", () => {
-        appState.lang = appState.lang === "fr" ? "en" : "fr";
-        langBtn.textContent = appState.lang.toUpperCase();
-        this.showToast(`Langue: ${appState.lang.toUpperCase()}`);
-        this.refreshTextLabels();
-      });
-    }
-
-    // Step Simulation mode toggle
-    const simBtn = document.getElementById("btn-setting-sim");
-    if (simBtn) {
-      simBtn.addEventListener("click", () => {
-        appState.simMode = !appState.simMode;
-        simBtn.textContent = appState.simMode ? "Activé (Alt+L/R)" : "Désactivé";
-        document.getElementById("sim-debug-canvas")?.classList.toggle("show", appState.simMode);
-        this.showToast(appState.simMode ? "Mode simulation activé" : "Mode simulation désactivé");
-      });
-    }
-  }
-
-  setupProfileScreen() {
-    const nameDisplay = document.getElementById("profile-name-display");
-    if (nameDisplay) nameDisplay.textContent = appState.profile.playerName;
-
-    document.getElementById("btn-edit-name")?.addEventListener("click", () => {
-      osk.open(appState.profile.playerName, (newName) => {
-        appState.profile.playerName = newName || "Joueur TV";
-        if (nameDisplay) nameDisplay.textContent = appState.profile.playerName;
-        appState.saveProfile();
-        this.showToast(`Nom mis à jour: ${appState.profile.playerName}`);
-      });
-    });
-
-    // Theme selector buttons
-    const themeButtons = document.querySelectorAll(".theme-selector-btn");
-    themeButtons.forEach(btn => {
-      btn.addEventListener("click", () => {
-        const theme = btn.dataset.theme;
-        appState.profile.theme = theme;
-        appState.saveProfile();
-        themeButtons.forEach(b => b.classList.toggle("active", b.dataset.theme === theme));
-        this.showToast(`Thème: ${theme.toUpperCase()}`);
-      });
-    });
-
-    // Stride length adjust
-    const strideVal = document.getElementById("profile-stride-val");
-    if (strideVal) strideVal.textContent = `${appState.profile.strideLengthM.toFixed(2)} m`;
-    document.getElementById("btn-stride-minus")?.addEventListener("click", () => {
-      appState.profile.strideLengthM = Math.max(0.4, Number((appState.profile.strideLengthM - 0.05).toFixed(2)));
-      if (strideVal) strideVal.textContent = `${appState.profile.strideLengthM.toFixed(2)} m`;
-      appState.saveProfile();
-    });
-    document.getElementById("btn-stride-plus")?.addEventListener("click", () => {
-      appState.profile.strideLengthM = Math.min(1.5, Number((appState.profile.strideLengthM + 0.05).toFixed(2)));
-      if (strideVal) strideVal.textContent = `${appState.profile.strideLengthM.toFixed(2)} m`;
-      appState.saveProfile();
-    });
-  }
-
-  refreshTextLabels() {
-    const t = I18N[appState.lang];
-    document.querySelectorAll("[data-i18n]").forEach(el => {
-      const key = el.dataset.i18n;
-      if (t[key]) el.textContent = t[key];
-    });
-  }
-
-  /* ==========================================================================
-     SECTION 5: LOADING CONTENT FROM FOLDERS + GROUPING BY GENRE
-     Strict validation against 5.1 JSON CONTRACT. Tolerant defaults.
-     ========================================================================== */
-
-  sanitizeGameData(data, filename) {
-    data._filename = filename;
-    data.meta = data.meta || {};
-    data.video = data.video || {};
-    data.game = data.game || {};
-
-    // 1. Meta fields
-    data.meta.title = String(data.meta.title || data.video.title || "Sans titre");
-    data.meta.genre = String(data.meta.genre || "").trim();
-    const diff = (data.meta.difficulty || "normal").toLowerCase();
-    data.meta.difficulty = ["easy", "normal", "hard"].includes(diff) ? diff : "normal";
-
-    const defaultLevel = data.meta.difficulty === "easy" ? 1 : data.meta.difficulty === "hard" ? 3 : 2;
-    const rawLevel = parseInt(data.meta.level, 10);
-    data.meta.level = Number.isInteger(rawLevel) && rawLevel >= 1 ? rawLevel : defaultLevel;
-
-    // 2. Video fields
-    data.video.durationSeconds = Number(data.video.durationSeconds) || 180;
-    const trimStart = Math.max(0, Number(data.video.trimStart) || 0);
-    const trimEnd = Math.max(trimStart + 1, Number(data.video.trimEnd) || data.video.durationSeconds);
-    data.video.trimStart = trimStart;
-    data.video.trimEnd = trimEnd;
-    data.video.cuts = Array.isArray(data.video.cuts) ? data.video.cuts.map(c => ({
-      start: Number(c.start) || 0,
-      end: Number(c.end) || 0
-    })).filter(c => c.end > c.start) : [];
-    data.video.audioMuted = Boolean(data.video.audioMuted);
-
-    // Compute effectiveDurationSeconds fallback: trimEnd - trimStart - sum(cuts)
-    if (!data.video.effectiveDurationSeconds || Number(data.video.effectiveDurationSeconds) <= 0) {
-      let cutTotal = 0;
-      for (const cut of data.video.cuts) {
-        const cStart = Math.max(trimStart, Math.min(trimEnd, cut.start));
-        const cEnd = Math.max(trimStart, Math.min(trimEnd, cut.end));
-        if (cEnd > cStart) cutTotal += (cEnd - cStart);
-      }
-      data.video.effectiveDurationSeconds = Math.max(1, (trimEnd - trimStart) - cutTotal);
-    } else {
-      data.video.effectiveDurationSeconds = Number(data.video.effectiveDurationSeconds);
-    }
-
-    // 3. Game Timeline validation
-    const allowedActions = new Set([
-      "STARTING COUNT", "GO", "JUMP", "RIGHT", "LEFT", "SLIDE DOWN", "SLASH", "PUNCH", "END", "WIN"
-    ]);
-
-    const rawTimeline = Array.isArray(data.game.timeline) ? data.game.timeline : [];
-    const validTimeline = [];
-
-    for (const ev of rawTimeline) {
-      if (!ev || typeof ev.time !== "number" || isNaN(ev.time)) continue;
-
-      // Normalize action name (accept SLIDE_DOWN or SLIDE DOWN)
-      let action = String(ev.action || "").replace(/_/g, " ").trim().toUpperCase();
-      if (!allowedActions.has(action)) {
-        console.warn(`[${filename}] Ignored unknown action:`, ev.action);
-        continue;
-      }
-
-      // Ignore events outside trimStart..trimEnd
-      if (ev.time < trimStart || ev.time > trimEnd) {
-        console.warn(`[${filename}] Ignored event out of trim bounds (${ev.time}s)`);
-        continue;
-      }
-
-      // Ignore events inside cuts
-      const inCut = data.video.cuts.some(c => ev.time >= c.start && ev.time < c.end);
-      if (inCut) {
-        console.warn(`[${filename}] Ignored event inside cut (${ev.time}s)`);
-        continue;
-      }
-
-      // Validate onFail / onSuccess
-      const parseOutcome = (outcome) => {
-        if (!outcome || typeof outcome !== "object") {
-          return { enabled: false, seekTo: null };
-        }
-        let enabled = Boolean(outcome.enabled);
-        let seekTo = outcome.seekTo != null && isFinite(outcome.seekTo) ? Number(outcome.seekTo) : null;
-        if (outcome.enabled === undefined && seekTo !== null && seekTo >= 0) {
-          enabled = true; // legacy support
-        }
-        return { enabled: enabled && seekTo !== null && seekTo >= 0, seekTo: seekTo };
-      };
-
-      validTimeline.push({
-        id: String(ev.id || `ev_${validTimeline.length}`),
-        time: Number(ev.time),
-        action: action,
-        showOnScreen: ev.showOnScreen !== false,
-        duration: Math.max(0.2, Number(ev.duration) || 1.5),
-        points: Number.isFinite(ev.points) ? Number(ev.points) : 100,
-        hint: String(ev.hint || ""),
-        onFail: parseOutcome(ev.onFail),
-        onSuccess: parseOutcome(ev.onSuccess)
-      });
-    }
-
-    // Sort timeline strictly by time
-    validTimeline.sort((a, b) => a.time - b.time);
-    data.game.timeline = validTimeline;
-  }
-
-  sanitizeRunData(data, filename) {
-    data._filename = filename;
-    data.meta = data.meta || {};
-    data.video = data.video || {};
-    data.virtualRun = data.virtualRun || {};
-
-    data.meta.title = String(data.meta.title || data.video.title || "Course Virtuelle");
-    data.meta.genre = String(data.meta.genre || "").trim();
-    const diff = (data.meta.difficulty || "normal").toLowerCase();
-    data.meta.difficulty = ["easy", "normal", "hard"].includes(diff) ? diff : "normal";
-
-    const defaultLevel = data.meta.difficulty === "easy" ? 1 : data.meta.difficulty === "hard" ? 3 : 2;
-    const rawLevel = parseInt(data.meta.level, 10);
-    data.meta.level = Number.isInteger(rawLevel) && rawLevel >= 1 ? rawLevel : defaultLevel;
-
-    data.video.durationSeconds = Number(data.video.durationSeconds) || 1800;
-    const trimStart = Math.max(0, Number(data.video.trimStart) || 0);
-    const trimEnd = Math.max(trimStart + 1, Number(data.video.trimEnd) || data.video.durationSeconds);
-    data.video.trimStart = trimStart;
-    data.video.trimEnd = trimEnd;
-    data.video.cuts = Array.isArray(data.video.cuts) ? data.video.cuts.map(c => ({
-      start: Number(c.start) || 0,
-      end: Number(c.end) || 0
-    })).filter(c => c.end > c.start) : [];
-    data.video.audioMuted = Boolean(data.video.audioMuted);
-
-    if (!data.video.effectiveDurationSeconds || Number(data.video.effectiveDurationSeconds) <= 0) {
-      let cutTotal = 0;
-      for (const cut of data.video.cuts) {
-        const cStart = Math.max(trimStart, Math.min(trimEnd, cut.start));
-        const cEnd = Math.max(trimStart, Math.min(trimEnd, cut.end));
-        if (cEnd > cStart) cutTotal += (cEnd - cStart);
-      }
-      data.video.effectiveDurationSeconds = Math.max(1, (trimEnd - trimStart) - cutTotal);
-    } else {
-      data.video.effectiveDurationSeconds = Number(data.video.effectiveDurationSeconds);
-    }
-
-    // Route fields
-    data.virtualRun.route = data.virtualRun.route || {};
-    data.virtualRun.route.name = String(data.virtualRun.route.name || data.meta.title);
-    if (data.virtualRun.route.totalDistanceKm != null) {
-      data.virtualRun.route.totalDistanceKm = Number(data.virtualRun.route.totalDistanceKm);
-    }
-    if (data.virtualRun.route.elevationGainM != null) {
-      data.virtualRun.route.elevationGainM = Number(data.virtualRun.route.elevationGainM);
-    }
-  }
-
   getBaseUrl() {
-    const href = window.location.href.split('#')[0].split('?')[0];
-    if (href.endsWith('.html')) {
-      return href.substring(0, href.lastIndexOf('/') + 1);
+    const href = window.location.href.split("#")[0].split("?")[0];
+    if (href.endsWith(".html")) {
+      return href.substring(0, href.lastIndexOf("/") + 1);
     }
-    return href.endsWith('/') ? href : href + '/';
+    return href.endsWith("/") ? href : href + "/";
   }
 
   async loadGames() {
-    const container = document.getElementById("games-shelves-container");
+    const container = document.getElementById("games-shelves");
     if (!container) return;
 
     try {
       const base = this.getBaseUrl();
       const manifestUrl = new URL("games/index.json", base).href;
       const resp = await fetch(manifestUrl);
-      if (!resp.ok) throw new Error("Manifest games not found");
+      if (!resp.ok) throw new Error("games/index.json missing");
       const list = await resp.json();
 
       const items = [];
@@ -1397,41 +945,32 @@ class AppUI {
           const itemResp = await fetch(itemUrl);
           if (itemResp.ok) {
             const data = await itemResp.json();
-            // Contract 5.1: type must match folder
-            if (data.type !== "game") {
-              console.warn(`[${filename}] Skipped: type is not 'game' (${data.type})`);
-              continue;
-            }
-            // videoId must match 11 chars
-            if (!data.video?.videoId || !/^[\w-]{11}$/.test(data.video.videoId)) {
-              console.warn(`[${filename}] Skipped: invalid videoId (${data.video?.videoId})`);
-              continue;
-            }
+            if (data.type !== "game") continue;
             this.sanitizeGameData(data, filename);
             items.push(data);
           }
         } catch (e) {
-          console.warn(`Failed to fetch game ${filename}:`, e);
+          console.warn(`Failed loading game ${filename}:`, e);
         }
       }
 
       this.gamesData = items;
       this.renderShelves(container, items, "game");
     } catch (err) {
-      console.error("Error loading games manifest:", err);
-      container.innerHTML = `<div class="empty-state">Impossible de charger le manifest ./games/index.json</div>`;
+      console.warn("Games load warning:", err);
+      container.innerHTML = `<div class="shelf"><div class="shelf-title">Chargement des jeux...</div></div>`;
     }
   }
 
   async loadRuns() {
-    const container = document.getElementById("runs-shelves-container");
+    const container = document.getElementById("runs-shelves");
     if (!container) return;
 
     try {
       const base = this.getBaseUrl();
       const manifestUrl = new URL("virtual-run/index.json", base).href;
       const resp = await fetch(manifestUrl);
-      if (!resp.ok) throw new Error("Manifest virtual-run not found");
+      if (!resp.ok) throw new Error("virtual-run/index.json missing");
       const list = await resp.json();
 
       const items = [];
@@ -1441,302 +980,221 @@ class AppUI {
           const itemResp = await fetch(itemUrl);
           if (itemResp.ok) {
             const data = await itemResp.json();
-            // Contract 5.1: type must match folder
-            if (data.type !== "virtual_run") {
-              console.warn(`[${filename}] Skipped: type is not 'virtual_run' (${data.type})`);
-              continue;
-            }
-            if (!data.video?.videoId || !/^[\w-]{11}$/.test(data.video.videoId)) {
-              console.warn(`[${filename}] Skipped: invalid videoId (${data.video?.videoId})`);
-              continue;
-            }
+            if (data.type !== "virtual_run") continue;
             this.sanitizeRunData(data, filename);
             items.push(data);
           }
         } catch (e) {
-          console.warn(`Failed to fetch virtual run ${filename}:`, e);
+          console.warn(`Failed loading run ${filename}:`, e);
         }
       }
 
       this.runsData = items;
       this.renderShelves(container, items, "run");
     } catch (err) {
-      console.error("Error loading virtual runs manifest:", err);
-      container.innerHTML = `<div class="empty-state">Impossible de charger le manifest ./virtual-run/index.json</div>`;
+      console.warn("Runs load warning:", err);
+      container.innerHTML = `<div class="shelf"><div class="shelf-title">Chargement des courses...</div></div>`;
     }
   }
 
-  /**
-   * Group items by meta.genre (case-insensitive, preserve first spelling, "Autres" last)
-   * Sort inside shelf by meta.level then title.
-   * Render horizontal row of fixed banners (UI.banner = 400x225px)
-   */
+  sanitizeGameData(data, filename) {
+    data._filename = filename;
+    data.meta = data.meta || {};
+    data.video = data.video || {};
+    data.game = data.game || {};
+
+    data.meta.title = String(data.meta.title || "Jeu de Rythme");
+    data.meta.genre = String(data.meta.genre || "Arcade").trim();
+    data.meta.level = Number(data.meta.level) || 1;
+
+    data.video.durationSeconds = Number(data.video.durationSeconds) || 90;
+    data.video.effectiveDurationSeconds = Number(data.video.effectiveDurationSeconds) || data.video.durationSeconds;
+    data.video.trimStart = Number(data.video.trimStart) || 0;
+    data.video.trimEnd = Number(data.video.trimEnd) || data.video.durationSeconds;
+    data.video.cuts = Array.isArray(data.video.cuts) ? data.video.cuts : [];
+
+    const allowed = new Set(["STARTING COUNT", "GO", "JUMP", "RIGHT", "LEFT", "SLIDE DOWN", "SLASH", "PUNCH", "END", "WIN"]);
+    const rawTL = Array.isArray(data.game.timeline) ? data.game.timeline : [];
+    data.game.timeline = rawTL
+      .filter(ev => ev && typeof ev.time === "number")
+      .map((ev, i) => {
+        let action = String(ev.action || "").replace(/_/g, " ").trim().toUpperCase();
+        if (!allowed.has(action)) action = "JUMP";
+        return {
+          id: String(ev.id || `e${i}`),
+          time: Number(ev.time),
+          action: action,
+          showOnScreen: ev.showOnScreen !== false,
+          duration: Number(ev.duration) || 1.5,
+          points: Number(ev.points) || 100,
+          hint: String(ev.hint || ""),
+          onFail: ev.onFail || { enabled: false, seekTo: null },
+          onSuccess: ev.onSuccess || { enabled: false, seekTo: null }
+        };
+      })
+      .sort((a, b) => a.time - b.time);
+  }
+
+  sanitizeRunData(data, filename) {
+    data._filename = filename;
+    data.meta = data.meta || {};
+    data.video = data.video || {};
+    data.virtualRun = data.virtualRun || {};
+
+    data.meta.title = String(data.meta.title || "Course Virtuelle");
+    data.meta.genre = String(data.meta.genre || "Nature").trim();
+    data.meta.level = Number(data.meta.level) || 1;
+
+    data.video.durationSeconds = Number(data.video.durationSeconds) || 600;
+    data.video.effectiveDurationSeconds = Number(data.video.effectiveDurationSeconds) || data.video.durationSeconds;
+    data.video.trimStart = Number(data.video.trimStart) || 0;
+    data.video.trimEnd = Number(data.video.trimEnd) || data.video.durationSeconds;
+    data.video.cuts = Array.isArray(data.video.cuts) ? data.video.cuts : [];
+  }
+
   renderShelves(container, items, type) {
     container.innerHTML = "";
-    if (!items || items.length === 0) {
-      container.innerHTML = `<div class="empty-state">Aucun contenu trouvé.</div>`;
+    if (!items.length) {
+      container.innerHTML = `<div class="shelf"><div class="shelf-title">Aucune séance disponible</div></div>`;
       return;
     }
 
-    const genreGroups = new Map();
-    const otherLabel = I18N[appState.lang].otherGenre;
-
+    // Group by genre
+    const groups = new Map();
     items.forEach(item => {
-      const rawGenre = (item.meta?.genre || "").trim();
-      const genreKey = rawGenre.toLowerCase();
-      const displayName = rawGenre || otherLabel;
-
-      if (!genreGroups.has(genreKey)) {
-        genreGroups.set(genreKey, { displayName: displayName, items: [] });
-      }
-      genreGroups.get(genreKey).items.push(item);
+      const genre = (item.meta?.genre || "Autres").trim();
+      if (!groups.has(genre)) groups.set(genre, []);
+      groups.get(genre).push(item);
     });
 
-    // Sort genres alphabetically, "Autres" / empty last
-    const sortedGenres = Array.from(genreGroups.entries()).sort((a, b) => {
-      const isAOther = a[0] === "" || a[1].displayName.toLowerCase() === otherLabel.toLowerCase();
-      const isBOther = b[0] === "" || b[1].displayName.toLowerCase() === otherLabel.toLowerCase();
-      if (isAOther) return 1;
-      if (isBOther) return -1;
-      return a[1].displayName.localeCompare(b[1].displayName);
-    });
+    groups.forEach((groupItems, genreName) => {
+      const shelf = document.createElement("div");
+      shelf.className = "shelf";
 
-    // Build Shelves
-    sortedGenres.forEach(([_, group]) => {
-      // Sort inside shelf by level then title
-      group.items.sort((a, b) => {
-        const lvlA = a.meta?.level || 1;
-        const lvlB = b.meta?.level || 1;
-        if (lvlA !== lvlB) return lvlA - lvlB;
-        return (a.meta?.title || "").localeCompare(b.meta?.title || "");
-      });
+      const title = document.createElement("div");
+      title.className = "shelf-title";
+      title.innerHTML = `${genreName} <small>${groupItems.length} séance${groupItems.length > 1 ? "s" : ""}</small>`;
+      shelf.appendChild(title);
 
-      const shelfRow = document.createElement("div");
-      shelfRow.className = "shelf-row";
-
-      const header = document.createElement("div");
-      header.className = "shelf-title";
-      header.textContent = group.displayName;
-
-      const countBadge = document.createElement("span");
-      countBadge.className = "shelf-count";
-      countBadge.textContent = `(${group.items.length})`;
-      header.appendChild(countBadge);
-      shelfRow.appendChild(header);
-
-      const trackWrapper = document.createElement("div");
-      trackWrapper.className = "shelf-track-wrapper";
+      const viewport = document.createElement("div");
+      viewport.className = "viewport";
 
       const track = document.createElement("div");
-      track.className = "shelf-track";
+      track.className = "track";
+      track.setAttribute("data-zone", "");
+      track.setAttribute("data-dir", "h");
 
-      group.items.forEach(item => {
-        const card = this.createCardElement(item, type);
+      groupItems.forEach(item => {
+        const card = document.createElement("a");
+        card.className = "card";
+        card.setAttribute("data-action", type);
+        card.setAttribute("data-file", item._filename);
+        card.setAttribute("data-focusable", "");
+        card.href = `#${type}/${item._filename}`;
+
+        const videoId = (item.video?.videoId || "").trim();
+        const thumbUrl = /^[\w-]{11}$/.test(videoId)
+          ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+          : "";
+
+        const duration = Math.round(item.video?.effectiveDurationSeconds || item.video?.durationSeconds || 90);
+        const mins = Math.floor(duration / 60);
+        const secs = String(duration % 60).padStart(2, "0");
+
+        card.innerHTML = `
+          ${thumbUrl ? `<img src="${thumbUrl}" alt="${item.meta?.title}" onerror="this.style.display='none'" />` : ""}
+          <div class="shade"></div>
+          <span class="tag">${item.meta?.difficulty || "Normal"}</span>
+          <span class="dur">${mins}:${secs}</span>
+          <div class="meta">
+            <b>${item.meta?.title}</b>
+            <small>Niveau ${item.meta?.level || 1} · ${type === "game" ? (item.game?.rules?.maxLives || 3) + " vies" : "Endurance"}</small>
+          </div>
+        `;
+
         track.appendChild(card);
       });
 
-      trackWrapper.appendChild(track);
-      shelfRow.appendChild(trackWrapper);
-      container.appendChild(shelfRow);
+      viewport.appendChild(track);
+      shelf.appendChild(viewport);
+      container.appendChild(shelf);
     });
-  }
-
-  createCardElement(item, type) {
-    const card = document.createElement("div");
-    card.className = "tv-card";
-    card.setAttribute("data-focusable", "true");
-
-    const videoId = (item.video?.videoId || "").trim();
-    const isValidId = /^[\w-]{11}$/.test(videoId);
-    const thumbUrl = isValidId
-      ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
-      : "";
-
-    const title = item.meta?.title || "Sans titre";
-    const difficulty = (item.meta?.difficulty || "normal").toLowerCase();
-    const level = item.meta?.level || 1;
-    const duration = Math.round(item.video?.effectiveDurationSeconds || item.video?.durationSeconds || 180);
-    const minutes = Math.floor(duration / 60);
-    const seconds = String(duration % 60).padStart(2, "0");
-
-    // Thumb wrap with fallback
-    const thumbWrap = document.createElement("div");
-    thumbWrap.className = "tv-card-thumb-wrap";
-
-    if (thumbUrl) {
-      const img = document.createElement("img");
-      img.className = "tv-card-thumb";
-      img.src = thumbUrl;
-      img.alt = title;
-      img.referrerPolicy = "no-referrer";
-      img.onerror = () => {
-        img.style.display = "none";
-      };
-      thumbWrap.appendChild(img);
-    }
-
-    // Gradient Overlay with text & metadata (no innerHTML for safety)
-    const gradient = document.createElement("div");
-    gradient.className = "tv-card-gradient";
-
-    const titleEl = document.createElement("div");
-    titleEl.className = "tv-card-title";
-    titleEl.textContent = title;
-    gradient.appendChild(titleEl);
-
-    const metaRow = document.createElement("div");
-    metaRow.className = "tv-card-meta";
-
-    const diffBadge = document.createElement("span");
-    diffBadge.className = `tv-badge badge-${difficulty}`;
-    diffBadge.textContent = difficulty.toUpperCase();
-    metaRow.appendChild(diffBadge);
-
-    const durSpan = document.createElement("span");
-    durSpan.textContent = `${minutes}:${seconds}`;
-    metaRow.appendChild(durSpan);
-
-    const lvlSpan = document.createElement("span");
-    lvlSpan.textContent = `Nv.${level}`;
-    metaRow.appendChild(lvlSpan);
-
-    // Route badges for Virtual Run (totalDistanceKm, elevationGainM)
-    if (type === "run" && item.virtualRun?.route) {
-      const route = item.virtualRun.route;
-      if (route.totalDistanceKm && route.totalDistanceKm > 0) {
-        const distBadge = document.createElement("span");
-        distBadge.textContent = `${route.totalDistanceKm} km`;
-        metaRow.appendChild(distBadge);
-      }
-      if (route.elevationGainM && route.elevationGainM > 0) {
-        const elevBadge = document.createElement("span");
-        elevBadge.textContent = `+${route.elevationGainM}m D+`;
-        metaRow.appendChild(elevBadge);
-      }
-    }
-
-    // Profile record
-    if (type === "game") {
-      const best = appState.profile.bestScores[item._filename] || 0;
-      if (best > 0) {
-        const scoreSpan = document.createElement("span");
-        scoreSpan.className = "best-score-tag";
-        scoreSpan.textContent = `★ ${best}`;
-        metaRow.appendChild(scoreSpan);
-      }
-    } else {
-      const bestRun = appState.profile.bestRuns[item._filename];
-      if (bestRun) {
-        const distSpan = document.createElement("span");
-        distSpan.className = "best-score-tag";
-        distSpan.textContent = `★ ${bestRun.distanceKm.toFixed(1)} km`;
-        metaRow.appendChild(distSpan);
-      }
-    }
-
-    gradient.appendChild(metaRow);
-    thumbWrap.appendChild(gradient);
-    card.appendChild(thumbWrap);
-
-    // Click handler triggers game or run mode
-    card.addEventListener("click", () => {
-      if (type === "game") {
-        gameEngine.start(item);
-      } else {
-        runEngine.start(item);
-      }
-    });
-
-    return card;
   }
 }
 
 export const appUI = new AppUI();
 
-/**
- * TV-Friendly On-Screen Keyboard (D-Pad Navigable)
- */
+/* ==========================================================================
+   ON-SCREEN KEYBOARD (TV D-Pad Friendly)
+   ========================================================================== */
+
 class OnScreenKeyboard {
   constructor() {
-    this.modal = document.getElementById("modal-osk");
-    this.display = document.getElementById("osk-input-text");
     this.currentText = "";
-    this.onDoneCallback = null;
-    this.setupGrid();
+    this.callback = null;
+    this.setupKeys();
   }
 
-  setupGrid() {
-    const keys = [
-      ["A", "B", "C", "D", "E", "F", "1", "2", "3"],
-      ["G", "H", "I", "J", "K", "L", "4", "5", "6"],
-      ["M", "N", "O", "P", "Q", "R", "7", "8", "9"],
-      ["S", "T", "U", "V", "W", "X", "Y", "Z", "0"],
-      ["ESPACE", "EFFACER", "VALIDER"]
-    ];
-
+  setupKeys() {
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split("");
     const grid = document.getElementById("osk-keys-container");
     if (!grid) return;
     grid.innerHTML = "";
 
-    keys.forEach(row => {
-      const rowEl = document.createElement("div");
-      rowEl.className = "osk-row";
-      row.forEach(k => {
-        const btn = document.createElement("button");
-        btn.className = "osk-key";
-        btn.setAttribute("data-focusable", "true");
-        btn.textContent = k;
-
-        if (k === "ESPACE") btn.classList.add("space");
-        if (k === "EFFACER" || k === "VALIDER") btn.classList.add("wide");
-
-        btn.addEventListener("click", () => this.handleKeyPress(k));
-        rowEl.appendChild(btn);
+    letters.forEach(char => {
+      const btn = document.createElement("button");
+      btn.className = "osk-key";
+      btn.setAttribute("data-focusable", "");
+      btn.textContent = char;
+      btn.addEventListener("click", () => {
+        if (this.currentText.length < 20) {
+          this.currentText += char;
+          this.updateDisplay();
+        }
       });
-      grid.appendChild(rowEl);
+      grid.appendChild(btn);
+    });
+
+    document.getElementById("btn-osk-space")?.addEventListener("click", () => {
+      this.currentText += " ";
+      this.updateDisplay();
+    });
+
+    document.getElementById("btn-osk-backspace")?.addEventListener("click", () => {
+      this.currentText = this.currentText.slice(0, -1);
+      this.updateDisplay();
+    });
+
+    document.getElementById("btn-osk-done")?.addEventListener("click", () => {
+      appUI.closeModal("modal-osk");
+      if (this.callback) this.callback(this.currentText.trim());
     });
   }
 
-  open(initialText, callback) {
-    this.currentText = initialText || "";
-    this.onDoneCallback = callback;
-    if (this.display) this.display.textContent = this.currentText;
+  open(initial, cb) {
+    this.currentText = initial || "";
+    this.callback = cb;
+    this.updateDisplay();
     appUI.openModal("modal-osk");
   }
 
-  handleKeyPress(key) {
-    if (key === "ESPACE") {
-      this.currentText += " ";
-    } else if (key === "EFFACER") {
-      this.currentText = this.currentText.slice(0, -1);
-    } else if (key === "VALIDER") {
-      appUI.closeModal("modal-osk");
-      if (this.onDoneCallback) this.onDoneCallback(this.currentText.trim());
-      return;
-    } else {
-      if (this.currentText.length < 24) {
-        this.currentText += key;
-      }
-    }
-    if (this.display) this.display.textContent = this.currentText;
+  updateDisplay() {
+    const el = document.getElementById("osk-input-text");
+    if (el) el.textContent = this.currentText;
   }
 }
 
 export const osk = new OnScreenKeyboard();
 
 /* ==========================================================================
-   LAYER 3: ENGINES (VIDEO CONTROLLER, GAME ENGINE, RUN ENGINE)
+   LAYER 3: VIDEO CONTROLLER & GAME ENGINES
    ========================================================================== */
 
-/**
- * YouTube Player Controller with Non-Destructive Live Cut/Trim Support
- */
 class VideoController {
   constructor() {
     this.player = null;
-    this.isReady = false;
-    this.watcherInterval = null;
-    this.config = null; // current video edit config
+    this.watcher = null;
+    this.config = null;
     this.lastPolledTime = 0;
     this.lastPollTimestamp = 0;
   }
@@ -1747,9 +1205,7 @@ class VideoController {
         resolve();
         return;
       }
-      window.onYouTubeIframeAPIReady = () => {
-        resolve();
-      };
+      window.onYouTubeIframeAPIReady = () => resolve();
       if (!document.getElementById("yt-api-script")) {
         const tag = document.createElement("script");
         tag.id = "yt-api-script";
@@ -1763,11 +1219,7 @@ class VideoController {
     await this.initApi();
     this.config = videoConfig;
 
-    return new Promise((resolve, reject) => {
-      const container = document.getElementById("yt-iframe-placeholder");
-      if (!container) return reject(new Error("Container not found"));
-
-      // If player already exists, load videoById
+    return new Promise((resolve) => {
       if (this.player && typeof this.player.loadVideoById === "function") {
         this.player.loadVideoById({
           videoId: videoConfig.videoId,
@@ -1780,7 +1232,6 @@ class VideoController {
         return;
       }
 
-      // Create player
       this.player = new window.YT.Player("yt-iframe-placeholder", {
         videoId: videoConfig.videoId,
         playerVars: {
@@ -1793,14 +1244,12 @@ class VideoController {
         },
         events: {
           onReady: (e) => {
-            this.isReady = true;
             if (videoConfig.audioMuted) e.target.mute();
             this.startWatcher();
             resolve(e.target);
           },
           onError: (e) => {
-            console.error("YouTube Player error:", e.data);
-            appUI.showToast(`Erreur vidéo (${e.data}). Vérifiez la connexion.`);
+            TVNav.toast(`Erreur vidéo (${e.data})`);
           }
         }
       });
@@ -1808,39 +1257,37 @@ class VideoController {
   }
 
   startWatcher() {
-    if (this.watcherInterval) clearInterval(this.watcherInterval);
+    if (this.watcher) clearInterval(this.watcher);
     this.lastPolledTime = 0;
     this.lastPollTimestamp = performance.now();
 
-    // 50ms polling + performance.now() interpolation
-    this.watcherInterval = setInterval(() => {
+    this.watcher = setInterval(() => {
       if (!this.player || typeof this.player.getCurrentTime !== "function") return;
       try {
-        const rawTime = this.player.getCurrentTime();
-        this.lastPolledTime = rawTime;
+        const raw = this.player.getCurrentTime();
+        this.lastPolledTime = raw;
         this.lastPollTimestamp = performance.now();
 
         if (!this.config) return;
 
-        // 1. Clamp trimStart
+        // Trim start clamp
         const trimStart = this.config.trimStart || 0;
-        if (rawTime < trimStart - 0.5) {
+        if (raw < trimStart - 0.5) {
           this.player.seekTo(trimStart, true);
           return;
         }
 
-        // 2. Stop at trimEnd
+        // Trim end check
         const trimEnd = this.config.trimEnd;
-        if (trimEnd && rawTime >= trimEnd) {
+        if (trimEnd && raw >= trimEnd) {
           bus.emit("VIDEO_REACHED_END");
           return;
         }
 
-        // 3. Skip cuts non-destructively
+        // Non-destructive cuts
         const cuts = this.config.cuts || [];
         for (const cut of cuts) {
-          if (rawTime >= cut.start && rawTime < cut.end) {
-            // Seek past cut end
+          if (raw >= cut.start && raw < cut.end) {
             this.player.seekTo(cut.end + 0.05, true);
             break;
           }
@@ -1856,7 +1303,7 @@ class VideoController {
   }
 
   stop() {
-    if (this.watcherInterval) clearInterval(this.watcherInterval);
+    if (this.watcher) clearInterval(this.watcher);
     try {
       if (this.player && typeof this.player.stopVideo === "function") {
         this.player.stopVideo();
@@ -1868,7 +1315,7 @@ class VideoController {
 export const videoController = new VideoController();
 
 /**
- * GameEngine: Rhythm Game Mode with Outcome Seeks, Scoring, and Canvas Feedback
+ * GameEngine: Rhythm Timeline Engine with Outcome Seeks
  */
 class GameEngine {
   constructor() {
@@ -1881,11 +1328,9 @@ class GameEngine {
     this.multiplier = 1;
     this.lives = 3;
     this.misses = 0;
-    this.seekGracePeriodUntil = 0; // ms
-    this.canvas = null;
-    this.ctx = null;
+    this.seekGracePeriodUntil = 0;
     this.rafLoopId = null;
-    this.activeCues = []; // visual cues drawn on canvas
+    this.activeCues = [];
     this.unsubEvents = [];
   }
 
@@ -1898,21 +1343,16 @@ class GameEngine {
     this.combo = 0;
     this.multiplier = 1;
     this.misses = 0;
+    this.lives = gameData.game?.rules?.maxLives || 3;
 
-    const rules = Object.assign({}, GAME_RULES_DEFAULT, gameData.game?.rules);
-    this.lives = rules.maxLives;
-
-    // Clone and prepare timeline
-    this.timeline = (gameData.game?.timeline || []).map(ev => Object.assign({}, ev));
+    this.timeline = (gameData.game?.timeline || []).map(e => Object.assign({}, e));
     this.judgedEvents.clear();
 
-    // Show Video Stage & Game HUD
     document.getElementById("video-stage")?.classList.add("active");
     document.getElementById("game-hud")?.classList.remove("hidden");
     document.getElementById("run-hud")?.classList.add("hidden");
     this.updateHUD();
 
-    // Canvas setup
     this.canvas = document.getElementById("game-feedback-canvas");
     if (this.canvas) {
       this.canvas.width = 1920;
@@ -1920,20 +1360,18 @@ class GameEngine {
       this.ctx = this.canvas.getContext("2d");
     }
 
-    // Subscribe to semantic game actions
     this.unsubEvents = [
-      bus.on("JUMP", () => this.handlePlayerAction("JUMP")),
-      bus.on("RIGHT", () => this.handlePlayerAction("RIGHT")),
-      bus.on("LEFT", () => this.handlePlayerAction("LEFT")),
-      bus.on("SLIDE_DOWN", () => this.handlePlayerAction("SLIDE_DOWN")),
-      bus.on("SLASH", () => this.handlePlayerAction("SLASH")),
-      bus.on("PUNCH", () => this.handlePlayerAction("PUNCH")),
+      bus.on("JUMP", () => this.handleAction("JUMP")),
+      bus.on("RIGHT", () => this.handleAction("RIGHT")),
+      bus.on("LEFT", () => this.handleAction("LEFT")),
+      bus.on("SLIDE_DOWN", () => this.handleAction("SLIDE_DOWN")),
+      bus.on("SLASH", () => this.handleAction("SLASH")),
+      bus.on("PUNCH", () => this.handleAction("PUNCH")),
       bus.on("VIDEO_REACHED_END", () => this.handleVictory())
     ];
 
-    notifyAndroid("GAME_STARTED", { gameTitle: gameData.meta?.title });
+    notifyAndroid("GAME_STARTED", { title: gameData.meta?.title });
 
-    // Load and play video
     videoController.loadVideo(gameData.video).then(() => {
       this.runGameLoop();
     });
@@ -1943,7 +1381,7 @@ class GameEngine {
     this.active = false;
     appState.inGame = false;
     if (this.rafLoopId) cancelAnimationFrame(this.rafLoopId);
-    this.unsubEvents.forEach(unsub => unsub());
+    this.unsubEvents.forEach(un => un());
     this.unsubEvents = [];
     if (this.ctx && this.canvas) {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -1952,30 +1390,27 @@ class GameEngine {
 
   runGameLoop() {
     if (!this.active) return;
-
     const currentTime = videoController.getInterpolatedOriginalTime() + (appState.calibrationMs / 1000);
     this.processTimeline(currentTime);
-    this.renderCanvasFeedback(currentTime);
+    this.renderCanvasFeedback();
     this.updateTimelineBar(currentTime);
-
     this.rafLoopId = requestAnimationFrame(() => this.runGameLoop());
   }
 
   processTimeline(currentTime) {
-    const rules = this.currentGame.game?.rules || GAME_RULES_DEFAULT;
-    const windowGoodSec = (rules.timingWindowMs?.good || 300) / 1000;
+    const rules = this.currentGame.game?.rules || {};
+    const windowGoodSec = (rules.timingWindowMs?.good || 350) / 1000;
 
     for (const ev of this.timeline) {
       if (this.judgedEvents.has(ev.id)) continue;
 
-      // System events: STARTING COUNT, GO, END, WIN
       if (ev.action === "STARTING COUNT") {
         if (currentTime >= ev.time && currentTime < ev.time + 3.0) {
           const count = 3 - Math.floor(currentTime - ev.time);
           if (ev._lastCount !== count && count > 0) {
             ev._lastCount = count;
-            sounds.playCountdown(count);
-            this.addVisualCue(`COUNT_${count}`, count.toString(), 900);
+            Snd.countdown(count);
+            this.addCue("COUNT", count.toString());
           }
         } else if (currentTime >= ev.time + 3.0) {
           this.judgedEvents.add(ev.id);
@@ -1986,8 +1421,8 @@ class GameEngine {
       if (ev.action === "GO") {
         if (currentTime >= ev.time && !ev._triggered) {
           ev._triggered = true;
-          sounds.playCountdown(0);
-          this.addVisualCue("GO", "GO !", 1000);
+          Snd.countdown(0);
+          this.addCue("GO", "GO !");
           this.judgedEvents.add(ev.id);
         }
         continue;
@@ -2002,7 +1437,7 @@ class GameEngine {
         continue;
       }
 
-      // Check MISS for PLAYER actions (passed time + window without input)
+      // Miss check
       if (performance.now() > this.seekGracePeriodUntil) {
         if (currentTime > ev.time + windowGoodSec) {
           this.judgedEvents.add(ev.id);
@@ -2012,69 +1447,54 @@ class GameEngine {
     }
   }
 
-  handlePlayerAction(action) {
+  handleAction(action) {
     if (!this.active) return;
     const currentTime = videoController.getInterpolatedOriginalTime() + (appState.calibrationMs / 1000);
-    const rules = this.currentGame.game?.rules || GAME_RULES_DEFAULT;
-    const windowPerfectSec = (rules.timingWindowMs?.perfect || 120) / 1000;
-    const windowGoodSec = (rules.timingWindowMs?.good || 300) / 1000;
+    const rules = this.currentGame.game?.rules || {};
+    const winPerfectSec = (rules.timingWindowMs?.perfect || 150) / 1000;
+    const winGoodSec = (rules.timingWindowMs?.good || 350) / 1000;
 
     const normAction = (a) => String(a || "").replace(/_/g, " ").trim().toUpperCase();
-    const inputActionNorm = normAction(action);
+    const inputNorm = normAction(action);
 
-    // Find nearest pending player event
-    let targetEv = null;
+    let target = null;
     let minDelta = Infinity;
 
     for (const ev of this.timeline) {
       if (this.judgedEvents.has(ev.id)) continue;
-      // Skip system events
       if (["STARTING COUNT", "GO", "END", "WIN"].includes(ev.action)) continue;
-
       const delta = Math.abs(currentTime - ev.time);
-      if (delta <= windowGoodSec && delta < minDelta) {
+      if (delta <= winGoodSec && delta < minDelta) {
         minDelta = delta;
-        targetEv = ev;
+        target = ev;
       }
     }
 
-    if (!targetEv) {
-      // Pressed wrong timing or spurious action
-      return;
-    }
+    if (!target) return;
 
-    // Check if matching action
-    if (normAction(targetEv.action) === inputActionNorm) {
-      this.judgedEvents.add(targetEv.id);
-      const isPerfect = minDelta <= windowPerfectSec;
-      this.handleSuccess(targetEv, isPerfect);
+    this.judgedEvents.add(target.id);
+    if (normAction(target.action) === inputNorm) {
+      this.handleSuccess(target, minDelta <= winPerfectSec);
     } else {
-      // Wrong action triggered
-      this.judgedEvents.add(targetEv.id);
-      this.handleFail(targetEv, "WRONG");
+      this.handleFail(target, "WRONG");
     }
   }
 
   handleSuccess(ev, isPerfect) {
-    const rules = this.currentGame.game?.rules || GAME_RULES_DEFAULT;
+    const rules = this.currentGame.game?.rules || {};
     const basePts = isPerfect ? (rules.scoring?.perfect || 100) : (rules.scoring?.good || 50);
 
     this.combo++;
     const step = rules.scoring?.comboMultiplierStep || 5;
-    const maxMult = rules.scoring?.maxMultiplier || 4;
+    const maxMult = rules.scoring?.maxMultiplier || 3;
     this.multiplier = Math.min(maxMult, 1 + Math.floor(this.combo / step));
 
-    const earned = basePts * this.multiplier;
-    this.score += earned;
-
-    sounds.playSuccess(isPerfect);
-    if (ev.showOnScreen !== false) {
-      this.addVisualCue(isPerfect ? "PERFECT" : "GOOD", isPerfect ? "PARFAIT !" : "BIEN !", 700);
-    }
+    this.score += basePts * this.multiplier;
+    Snd.success(isPerfect);
+    this.addCue(isPerfect ? "PERFECT" : "GOOD", isPerfect ? "PARFAIT !" : "BIEN !");
     this.updateHUD();
 
-    // OUTCOME SEEK: onSuccess check
-    if (ev.onSuccess && ev.onSuccess.enabled === true && typeof ev.onSuccess.seekTo === "number" && isFinite(ev.onSuccess.seekTo) && ev.onSuccess.seekTo >= 0) {
+    if (ev.onSuccess?.enabled && typeof ev.onSuccess.seekTo === "number" && ev.onSuccess.seekTo >= 0) {
       this.applyOutcomeSeek(ev.onSuccess.seekTo, "SUCCÈS !");
     }
   }
@@ -2085,60 +1505,38 @@ class GameEngine {
     this.lives = Math.max(0, this.lives - 1);
     this.misses++;
 
-    sounds.playFail();
-    if (ev.showOnScreen !== false) {
-      this.addVisualCue("FAIL", reason === "WRONG" ? "MAUVAIS MOUVEMENT" : "RATÉ !", 800);
-    }
+    Snd.fail();
+    this.addCue("FAIL", reason === "WRONG" ? "MAUVAIS MOUVEMENT" : "RATÉ !");
     this.updateHUD();
 
-    // Check GAME OVER condition first (priority over seek!)
-    const rules = this.currentGame.game?.rules || GAME_RULES_DEFAULT;
-    if (this.lives <= 0 || this.misses >= (rules.maxMisses || 5)) {
+    const rules = this.currentGame.game?.rules || {};
+    if (this.lives <= 0 || this.misses >= (rules.maxMisses || 6)) {
       this.handleGameOver();
       return;
     }
 
-    // OUTCOME SEEK: onFail check
-    if (ev.onFail && ev.onFail.enabled === true && typeof ev.onFail.seekTo === "number" && isFinite(ev.onFail.seekTo) && ev.onFail.seekTo >= 0) {
+    if (ev.onFail?.enabled && typeof ev.onFail.seekTo === "number" && ev.onFail.seekTo >= 0) {
       this.applyOutcomeSeek(ev.onFail.seekTo, "RATÉ !");
     }
   }
 
   applyOutcomeSeek(seekToTime, bannerLabel) {
     if (!videoController.player) return;
-
-    // Clamp seekTo within video trim bounds and skip cuts
-    let target = Math.max(this.currentGame.video.trimStart || 0, seekToTime);
-    if (this.currentGame.video.trimEnd && target > this.currentGame.video.trimEnd) {
-      target = this.currentGame.video.trimEnd - 1;
-    }
-
-    const cuts = this.currentGame.video.cuts || [];
-    for (const cut of cuts) {
-      if (target >= cut.start && target < cut.end) {
-        target = cut.end + 0.1;
-      }
-    }
-
+    const target = Math.max(this.currentGame.video.trimStart || 0, seekToTime);
     videoController.player.seekTo(target, true);
 
-    // Re-arm timeline events: >= seekTo is pending, < seekTo is judged
     this.judgedEvents.clear();
     for (const ev of this.timeline) {
-      if (ev.time < target) {
-        this.judgedEvents.add(ev.id);
-      }
+      if (ev.time < target) this.judgedEvents.add(ev.id);
     }
 
-    // 900ms miss-detection grace period
     this.seekGracePeriodUntil = performance.now() + 900;
 
-    // Show on-screen seek banner (e.g. "RATÉ ! ↪ 3:03")
-    const minutes = Math.floor(target / 60);
-    const seconds = String(Math.floor(target % 60)).padStart(2, "0");
+    const mins = Math.floor(target / 60);
+    const secs = String(Math.floor(target % 60)).padStart(2, "0");
     const banner = document.getElementById("seek-toast-banner");
     if (banner) {
-      banner.textContent = `${bannerLabel} ↪ ${minutes}:${seconds}`;
+      banner.textContent = `${bannerLabel} ↪ ${mins}:${secs}`;
       banner.classList.add("show");
       setTimeout(() => banner.classList.remove("show"), 2000);
     }
@@ -2146,32 +1544,26 @@ class GameEngine {
 
   handleGameOver() {
     this.stop();
-    sounds.playGameOver();
+    Snd.fail();
     notifyAndroid("GAME_FINISHED", { result: "GAMEOVER", score: this.score });
-    appUI.showToast("GAME OVER ! Réessayez !");
-    this.showSummaryScreen("GAME OVER", false);
+    TVNav.toast("GAME OVER ! Réessayez !");
+    this.showSummaryScreen("GAME OVER");
   }
 
   handleVictory() {
     this.stop();
-    sounds.playWin();
-
-    // Save best score to profile
+    Snd.win();
     const best = appState.profile.bestScores[this.currentGame._filename] || 0;
     if (this.score > best) {
       appState.profile.bestScores[this.currentGame._filename] = this.score;
       appState.saveProfile();
     }
-
     notifyAndroid("GAME_FINISHED", { result: "WIN", score: this.score, bestScore: Math.max(best, this.score) });
-    this.showSummaryScreen("VICTOIRE !", true);
+    this.showSummaryScreen("VICTOIRE !");
   }
 
-  showSummaryScreen(heroTitle, isWin) {
-    const overlay = document.getElementById("modal-summary");
-    if (!overlay) return;
-
-    document.getElementById("summary-hero-title").textContent = heroTitle;
+  showSummaryScreen(title) {
+    document.getElementById("summary-hero-title").textContent = title;
     document.getElementById("summary-stat-1-val").textContent = this.score;
     document.getElementById("summary-stat-1-lbl").textContent = "Score Final";
 
@@ -2181,17 +1573,6 @@ class GameEngine {
 
     document.getElementById("summary-stat-3-val").textContent = `${this.misses}`;
     document.getElementById("summary-stat-3-lbl").textContent = "Fautes";
-
-    document.getElementById("btn-summary-replay").onclick = () => {
-      appUI.closeModal("modal-summary");
-      this.start(this.currentGame);
-    };
-
-    document.getElementById("btn-summary-back").onclick = () => {
-      appUI.closeModal("modal-summary");
-      document.getElementById("video-stage")?.classList.remove("active");
-      appUI.navigateScreen("games");
-    };
 
     appUI.openModal("modal-summary");
   }
@@ -2203,7 +1584,6 @@ class GameEngine {
     const comboVal = document.getElementById("hud-game-combo");
     if (comboVal) comboVal.textContent = `x${this.multiplier} (${this.combo})`;
 
-    // Hearts representation
     const heartsWrap = document.getElementById("hud-lives-container");
     if (heartsWrap) {
       heartsWrap.innerHTML = "";
@@ -2217,13 +1597,12 @@ class GameEngine {
 
   updateTimelineBar(currentTime) {
     const start = this.currentGame.video.trimStart || 0;
-    const end = this.currentGame.video.trimEnd || 200;
+    const end = this.currentGame.video.trimEnd || 90;
     const progress = Math.max(0, Math.min(100, ((currentTime - start) / (end - start)) * 100));
 
     const fill = document.getElementById("game-timeline-progress");
     if (fill) fill.style.width = `${progress}%`;
 
-    // Next upcoming event preview (skip showOnScreen: false and system events like WIN/END)
     const nextEv = this.timeline.find(ev => !this.judgedEvents.has(ev.id) && ev.time >= currentTime && ev.showOnScreen !== false);
     const spotlight = document.getElementById("game-next-cue-spotlight");
     if (spotlight && nextEv) {
@@ -2231,8 +1610,7 @@ class GameEngine {
       const icon = document.getElementById("next-cue-icon");
       const text = document.getElementById("next-cue-text");
       const hint = document.getElementById("next-cue-hint");
-
-      if (icon) icon.textContent = this.getActionInitial(nextEv.action);
+      if (icon) icon.textContent = this.getActionIcon(nextEv.action);
       if (text) text.textContent = nextEv.action;
       if (hint) hint.textContent = nextEv.hint || "";
     } else if (spotlight) {
@@ -2240,9 +1618,8 @@ class GameEngine {
     }
   }
 
-  getActionInitial(action) {
-    const norm = String(action || "").replace(/_/g, " ").trim().toUpperCase();
-    switch (norm) {
+  getActionIcon(action) {
+    switch (action) {
       case "JUMP": return "↑";
       case "SLIDE DOWN": return "↓";
       case "LEFT": return "←";
@@ -2253,62 +1630,47 @@ class GameEngine {
     }
   }
 
-  addVisualCue(type, text, durationMs = 800) {
+  addCue(type, text) {
     this.activeCues.push({
       type,
       text,
       startTime: performance.now(),
-      endTime: performance.now() + durationMs
+      endTime: performance.now() + 800
     });
   }
 
-  renderCanvasFeedback(currentTime) {
+  renderCanvasFeedback() {
     if (!this.ctx || !this.canvas) return;
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     const now = performance.now();
-    this.activeCues = this.activeCues.filter(cue => now < cue.endTime);
+    this.activeCues = this.activeCues.filter(c => now < c.endTime);
 
-    // Draw active cues
     for (const cue of this.activeCues) {
       const p = (now - cue.startTime) / (cue.endTime - cue.startTime);
-      const scale = 1.0 + Math.sin(p * Math.PI) * 0.3;
-      const opacity = 1.0 - Math.pow(p, 3);
+      const scale = 1.0 + Math.sin(p * Math.PI) * 0.25;
+      const opacity = 1.0 - Math.pow(p, 2);
 
       this.ctx.save();
-      this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2 - 40);
+      this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2 - 30);
       this.ctx.scale(scale, scale);
       this.ctx.globalAlpha = opacity;
 
       if (cue.type === "PERFECT") {
         this.ctx.fillStyle = "#34d399";
         this.ctx.font = "900 84px system-ui";
-        this.ctx.textAlign = "center";
-        this.ctx.shadowColor = "#34d399";
-        this.ctx.shadowBlur = 30;
-        this.ctx.fillText(cue.text, 0, 0);
       } else if (cue.type === "GOOD") {
         this.ctx.fillStyle = "#60a5fa";
         this.ctx.font = "800 72px system-ui";
-        this.ctx.textAlign = "center";
-        this.ctx.shadowColor = "#60a5fa";
-        this.ctx.shadowBlur = 20;
-        this.ctx.fillText(cue.text, 0, 0);
       } else if (cue.type === "FAIL") {
         this.ctx.fillStyle = "#ef4444";
         this.ctx.font = "900 76px system-ui";
-        this.ctx.textAlign = "center";
-        this.ctx.shadowColor = "#ef4444";
-        this.ctx.shadowBlur = 24;
-        this.ctx.fillText(cue.text, 0, 0);
-      } else if (cue.type.startsWith("COUNT_") || cue.type === "GO") {
+      } else {
         this.ctx.fillStyle = "#fbbf24";
-        this.ctx.font = "900 120px system-ui";
-        this.ctx.textAlign = "center";
-        this.ctx.shadowColor = "#fbbf24";
-        this.ctx.shadowBlur = 40;
-        this.ctx.fillText(cue.text, 0, 0);
+        this.ctx.font = "900 110px system-ui";
       }
+      this.ctx.textAlign = "center";
+      this.ctx.fillText(cue.text, 0, 0);
       this.ctx.restore();
     }
   }
@@ -2317,35 +1679,12 @@ class GameEngine {
 export const gameEngine = new GameEngine();
 
 /**
- * RunEngine: Virtual Run Mode with Real-Time Step Processing and Video Playback Speed
+ * RunEngine: Virtual Run Mode with Step Cadence & Video Speed Adaptation
  */
 class RunEngine {
   constructor() {
     this.active = false;
     this.currentRun = null;
-    this.stepTimestamps = []; // sliding window of performance.now()
-    this.totalSteps = 0;
-    this.leftSteps = 0;
-    this.rightSteps = 0;
-    this.distanceKm = 0;
-    this.movingTimeSec = 0;
-    this.smoothedSpeedKmh = 0;
-    this.currentCadenceSpm = 0;
-    this.maxSpeedKmh = 0;
-    this.lastStepTime = 0;
-    this.lastRateChangeTime = 0;
-    this.timerInterval = null;
-    this.rafLoopId = null;
-    this.unsubEvents = [];
-    this.stepIntervalHistory = []; // for simulation debug canvas
-  }
-
-  start(runData) {
-    this.stop();
-    this.active = true;
-    appState.inRun = true;
-    this.currentRun = runData;
-
     this.stepTimestamps = [];
     this.totalSteps = 0;
     this.leftSteps = 0;
@@ -2354,11 +1693,29 @@ class RunEngine {
     this.movingTimeSec = 0;
     this.smoothedSpeedKmh = 0;
     this.currentCadenceSpm = 0;
-    this.maxSpeedKmh = 0;
-    this.lastStepTime = performance.now();
+    this.lastStepTime = 0;
     this.lastRateChangeTime = 0;
+    this.timerInterval = null;
+    this.rafLoopId = null;
+    this.unsubEvents = [];
+    this.stepIntervalHistory = [];
+  }
 
-    // Show Video Stage & Run HUD
+  start(runData) {
+    this.stop();
+    this.active = true;
+    appState.inRun = true;
+    this.currentRun = runData;
+    this.stepTimestamps = [];
+    this.totalSteps = 0;
+    this.leftSteps = 0;
+    this.rightSteps = 0;
+    this.distanceKm = 0;
+    this.movingTimeSec = 0;
+    this.smoothedSpeedKmh = 0;
+    this.currentCadenceSpm = 0;
+    this.lastStepTime = performance.now();
+
     document.getElementById("video-stage")?.classList.add("active");
     document.getElementById("run-hud")?.classList.remove("hidden");
     document.getElementById("game-hud")?.classList.add("hidden");
@@ -2369,9 +1726,8 @@ class RunEngine {
       bus.on("VIDEO_REACHED_END", () => this.handleEnd())
     ];
 
-    notifyAndroid("RUN_STARTED", { routeName: runData.virtualRun?.route?.name });
+    notifyAndroid("RUN_STARTED", { title: runData.meta?.title });
 
-    // Load video
     videoController.loadVideo(runData.video).then(() => {
       this.startMovingClock();
       this.runEngineLoop();
@@ -2383,7 +1739,7 @@ class RunEngine {
     appState.inRun = false;
     if (this.timerInterval) clearInterval(this.timerInterval);
     if (this.rafLoopId) cancelAnimationFrame(this.rafLoopId);
-    this.unsubEvents.forEach(unsub => unsub());
+    this.unsubEvents.forEach(un => un());
     this.unsubEvents = [];
   }
 
@@ -2392,83 +1748,55 @@ class RunEngine {
     const now = performance.now();
 
     // Reject bounce < 150ms
-    if (now - this.lastStepTime < RUN_CONFIG_DEFAULT.minStepIntervalMs) {
-      return;
-    }
-
+    if (now - this.lastStepTime < 150) return;
     const interval = now - this.lastStepTime;
     this.lastStepTime = now;
-    sounds.playStep();
+    Snd.step();
 
-    // Increment step counts
     this.totalSteps++;
     if (foot === "LEFT") this.leftSteps++;
     else this.rightSteps++;
 
-    // Step flash indicator on HUD
+    // Foot flash on HUD
     const footEl = document.getElementById(foot === "LEFT" ? "foot-left-ind" : "foot-right-ind");
     if (footEl) {
       footEl.classList.add("flash");
       setTimeout(() => footEl.classList.remove("flash"), 120);
     }
 
-    // Slide window of last 6 steps
     this.stepTimestamps.push(now);
-    if (this.stepTimestamps.length > RUN_CONFIG_DEFAULT.cadenceWindow) {
-      this.stepTimestamps.shift();
-    }
+    if (this.stepTimestamps.length > 6) this.stepTimestamps.shift();
 
-    // Interval history for debug graph
     if (interval < 5000) {
       this.stepIntervalHistory.push(interval);
       if (this.stepIntervalHistory.length > 50) this.stepIntervalHistory.shift();
     }
 
-    // Calculate cadence and speed
-    this.updateMetricsFromSteps();
-
-    // Distance in km
+    this.updateMetrics();
     this.distanceKm = (this.totalSteps * appState.profile.strideLengthM) / 1000;
 
-    // If video was paused by idle, resume it!
+    // Resume video if paused
     if (videoController.player && typeof videoController.player.playVideo === "function") {
       try {
-        if (videoController.player.getPlayerState() === 2) {
-          videoController.player.playVideo();
-        }
+        if (videoController.player.getPlayerState() === 2) videoController.player.playVideo();
       } catch (_) {}
     }
   }
 
-  updateMetricsFromSteps() {
+  updateMetrics() {
     if (this.stepTimestamps.length < 2) return;
-
-    // Calculate intervals between consecutive steps
     const intervals = [];
     for (let i = 1; i < this.stepTimestamps.length; i++) {
       intervals.push(this.stepTimestamps[i] - this.stepTimestamps[i - 1]);
     }
-
-    // Median filter to reject outliers
     intervals.sort((a, b) => a - b);
-    const medianIntervalMs = intervals[Math.floor(intervals.length / 2)];
+    const median = intervals[Math.floor(intervals.length / 2)];
 
-    if (medianIntervalMs > 0) {
-      // Cadence (SPM)
-      this.currentCadenceSpm = Math.round(60000 / medianIntervalMs);
-
-      // Raw speed (km/h) = (strideLengthM / stepSec) * 3.6
-      const stepSec = medianIntervalMs / 1000;
-      const rawSpeedKmh = (appState.profile.strideLengthM / stepSec) * 3.6;
-
-      // Exponential Moving Average (alpha 0.35)
-      this.smoothedSpeedKmh = this.smoothedSpeedKmh === 0
-        ? rawSpeedKmh
-        : (this.smoothedSpeedKmh * 0.65 + rawSpeedKmh * 0.35);
-
-      if (this.smoothedSpeedKmh > this.maxSpeedKmh) {
-        this.maxSpeedKmh = this.smoothedSpeedKmh;
-      }
+    if (median > 0) {
+      this.currentCadenceSpm = Math.round(60000 / median);
+      const stepSec = median / 1000;
+      const rawSpeed = (appState.profile.strideLengthM / stepSec) * 3.6;
+      this.smoothedSpeedKmh = this.smoothedSpeedKmh === 0 ? rawSpeed : (this.smoothedSpeedKmh * 0.65 + rawSpeed * 0.35);
     }
   }
 
@@ -2478,23 +1806,18 @@ class RunEngine {
       if (!this.active) return;
       const now = performance.now();
 
-      // Check idle timeout (>2.5s without step)
-      if (now - this.lastStepTime > RUN_CONFIG_DEFAULT.idleTimeoutMs) {
-        // Player has stopped
+      // Idle timeout > 2.5s
+      if (now - this.lastStepTime > 2500) {
         this.smoothedSpeedKmh = Math.max(0, this.smoothedSpeedKmh * 0.7);
         if (this.smoothedSpeedKmh < 0.5) this.smoothedSpeedKmh = 0;
         this.currentCadenceSpm = 0;
 
-        // Auto-pause video when stopped
         if (videoController.player && typeof videoController.player.pauseVideo === "function") {
           try {
-            if (videoController.player.getPlayerState() === 1) {
-              videoController.player.pauseVideo();
-            }
+            if (videoController.player.getPlayerState() === 1) videoController.player.pauseVideo();
           } catch (_) {}
         }
       } else {
-        // Active moving time
         this.movingTimeSec++;
       }
 
@@ -2506,97 +1829,84 @@ class RunEngine {
   runEngineLoop() {
     if (!this.active) return;
     this.updateProgressBar();
-    if (appState.simMode) this.renderSimDebugGraph();
+    if (appState.simMode) this.renderSimDebug();
     this.rafLoopId = requestAnimationFrame(() => this.runEngineLoop());
   }
 
   adjustVideoPlaybackSpeed() {
     if (!videoController.player || typeof videoController.player.setPlaybackRate !== "function") return;
     const now = performance.now();
-    if (now - this.lastRateChangeTime < RUN_CONFIG_DEFAULT.rateChangeMinDelayMs) return;
+    if (now - this.lastRateChangeTime < 1200) return;
 
-    const refSpeed = this.currentRun.virtualRun?.speedMapping?.referenceSpeedKmh || RUN_CONFIG_DEFAULT.referenceSpeedKmh;
-    let targetRate = this.smoothedSpeedKmh / refSpeed;
-    if (this.smoothedSpeedKmh === 0) targetRate = 1.0; // keep neutral if idle
-
-    // Clamp [0.25, 2.0]
+    let targetRate = this.smoothedSpeedKmh / 8.0;
+    if (this.smoothedSpeedKmh === 0) targetRate = 1.0;
     targetRate = Math.max(0.25, Math.min(2.0, targetRate));
 
-    // Snap to available YouTube playback rates
     const avail = videoController.player.getAvailablePlaybackRates?.() || [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-    let closestRate = avail[0];
-    let minDiff = Infinity;
+    let closest = avail[0];
+    let minD = Infinity;
     for (const r of avail) {
-      const diff = Math.abs(r - targetRate);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestRate = r;
-      }
+      const d = Math.abs(r - targetRate);
+      if (d < minD) { minD = d; closest = r; }
     }
 
     try {
-      const currentRate = videoController.player.getPlaybackRate();
-      if (currentRate !== closestRate) {
-        videoController.player.setPlaybackRate(closestRate);
+      const cur = videoController.player.getPlaybackRate();
+      if (cur !== closest) {
+        videoController.player.setPlaybackRate(closest);
         this.lastRateChangeTime = now;
-        const rateLabel = document.getElementById("hud-metric-rate");
-        if (rateLabel) rateLabel.textContent = `${closestRate}x`;
+        const lbl = document.getElementById("hud-metric-rate");
+        if (lbl) lbl.textContent = `${closest}x`;
       }
     } catch (_) {}
   }
 
   updateHUD() {
-    // 1. Speed (km/h)
-    const speedEl = document.getElementById("hud-metric-speed");
-    if (speedEl) speedEl.textContent = this.smoothedSpeedKmh.toFixed(1);
+    const spd = document.getElementById("hud-metric-speed");
+    if (spd) spd.textContent = this.smoothedSpeedKmh.toFixed(1);
 
-    // 2. Pace (min/km)
-    const paceEl = document.getElementById("hud-metric-pace");
-    if (paceEl) {
+    const pace = document.getElementById("hud-metric-pace");
+    if (pace) {
       if (this.smoothedSpeedKmh > 1.0) {
-        const paceMin = 60 / this.smoothedSpeedKmh;
-        const pM = Math.floor(paceMin);
-        const pS = String(Math.floor((paceMin % 1) * 60)).padStart(2, "0");
-        paceEl.textContent = `${pM}'${pS}"`;
+        const pMin = 60 / this.smoothedSpeedKmh;
+        const pM = Math.floor(pMin);
+        const pS = String(Math.floor((pMin % 1) * 60)).padStart(2, "0");
+        pace.textContent = `${pM}'${pS}"`;
       } else {
-        paceEl.textContent = "--'--\"";
+        pace.textContent = "--'--\"";
       }
     }
 
-    // 3. Distance (m if < 1000, km if >= 1000)
-    const distEl = document.getElementById("hud-metric-dist");
-    const distUnit = document.getElementById("hud-metric-dist-unit");
-    if (distEl) {
+    const dist = document.getElementById("hud-metric-dist");
+    const unit = document.getElementById("hud-metric-dist-unit");
+    if (dist) {
       if (this.distanceKm < 1.0) {
-        distEl.textContent = Math.round(this.distanceKm * 1000);
-        if (distUnit) distUnit.textContent = "m";
+        dist.textContent = Math.round(this.distanceKm * 1000);
+        if (unit) unit.textContent = "m";
       } else {
-        distEl.textContent = this.distanceKm.toFixed(2);
-        if (distUnit) distUnit.textContent = "km";
+        dist.textContent = this.distanceKm.toFixed(2);
+        if (unit) unit.textContent = "km";
       }
     }
 
-    // 4. Time (MM:SS)
-    const timeEl = document.getElementById("hud-metric-time");
-    if (timeEl) {
+    const time = document.getElementById("hud-metric-time");
+    if (time) {
       const m = Math.floor(this.movingTimeSec / 60);
       const s = String(this.movingTimeSec % 60).padStart(2, "0");
-      timeEl.textContent = `${m}:${s}`;
+      time.textContent = `${m}:${s}`;
     }
 
-    // 5. Steps (total with L/R split)
-    const stepsEl = document.getElementById("hud-metric-steps");
-    if (stepsEl) stepsEl.textContent = `${this.totalSteps} (G:${this.leftSteps} D:${this.rightSteps})`;
+    const steps = document.getElementById("hud-metric-steps");
+    if (steps) steps.textContent = `${this.totalSteps} (G:${this.leftSteps} D:${this.rightSteps})`;
 
-    // 6. Cadence (SPM)
-    const cadEl = document.getElementById("hud-metric-cadence");
-    if (cadEl) cadEl.textContent = this.currentCadenceSpm;
+    const cad = document.getElementById("hud-metric-cadence");
+    if (cad) cad.textContent = this.currentCadenceSpm;
   }
 
   updateProgressBar() {
     const rawTime = videoController.getInterpolatedOriginalTime();
     const start = this.currentRun.video.trimStart || 0;
-    const end = this.currentRun.video.trimEnd || 200;
+    const end = this.currentRun.video.trimEnd || 600;
     const p = Math.max(0, Math.min(100, ((rawTime - start) / (end - start)) * 100));
 
     const fill = document.getElementById("run-bottom-progress-fill");
@@ -2605,46 +1915,18 @@ class RunEngine {
 
   handleEnd() {
     this.stop();
-    sounds.playWin();
+    Snd.win();
 
-    // Calories calculation (MET formula): Running MET ~ 8.0
-    const hours = this.movingTimeSec / 3600;
-    const calories = Math.round(8.0 * (appState.profile.weightKg || 70) * hours);
-    const avgSpeed = hours > 0 ? (this.distanceKm / hours) : 0;
-
-    // Save best run to profile
-    const best = appState.profile.bestRuns[this.currentRun._filename];
-    if (!best || this.distanceKm > best.distanceKm) {
-      appState.profile.bestRuns[this.currentRun._filename] = {
-        distanceKm: this.distanceKm,
-        steps: this.totalSteps,
-        avgSpeed: avgSpeed,
-        movingTimeSec: this.movingTimeSec
-      };
-      appState.saveProfile();
-    }
-
-    const summaryPayload = {
-      routeName: this.currentRun.virtualRun?.route?.name || "Parcours Virtuel",
-      totalSteps: this.totalSteps,
-      leftSteps: this.leftSteps,
-      rightSteps: this.rightSteps,
+    const summary = {
       distanceKm: this.distanceKm,
+      totalSteps: this.totalSteps,
       movingTimeSec: this.movingTimeSec,
-      avgSpeedKmh: avgSpeed,
-      maxSpeedKmh: this.maxSpeedKmh,
-      calories: calories
+      avgSpeedKmh: this.movingTimeSec > 0 ? (this.distanceKm / (this.movingTimeSec / 3600)) : 0
     };
 
-    notifyAndroid("RUN_FINISHED", summaryPayload);
-    this.showRunSummaryModal(summaryPayload);
-  }
+    notifyAndroid("RUN_FINISHED", summary);
 
-  showRunSummaryModal(summary) {
-    const overlay = document.getElementById("modal-summary");
-    if (!overlay) return;
-
-    document.getElementById("summary-hero-title").textContent = I18N[appState.lang].runCompleted;
+    document.getElementById("summary-hero-title").textContent = "Course Terminée !";
     document.getElementById("summary-stat-1-val").textContent = `${summary.distanceKm.toFixed(2)} km`;
     document.getElementById("summary-stat-1-lbl").textContent = "Distance Totale";
 
@@ -2654,27 +1936,16 @@ class RunEngine {
     document.getElementById("summary-stat-3-val").textContent = `${summary.avgSpeedKmh.toFixed(1)} km/h`;
     document.getElementById("summary-stat-3-lbl").textContent = "Vitesse Moyenne";
 
-    document.getElementById("btn-summary-replay").onclick = () => {
-      appUI.closeModal("modal-summary");
-      this.start(this.currentRun);
-    };
-
-    document.getElementById("btn-summary-back").onclick = () => {
-      appUI.closeModal("modal-summary");
-      document.getElementById("video-stage")?.classList.remove("active");
-      appUI.navigateScreen("runs");
-    };
-
     appUI.openModal("modal-summary");
   }
 
-  renderSimDebugGraph() {
+  renderSimDebug() {
     const canvas = document.getElementById("sim-debug-canvas");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.strokeStyle = "#34d399";
@@ -2687,7 +1958,6 @@ class RunEngine {
 
     for (let i = 0; i < len; i++) {
       const x = (i / Math.max(1, len - 1)) * w;
-      // map 0..2000ms to bottom..top
       const y = h - Math.min(h, (this.stepIntervalHistory[i] / 2000) * h);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -2696,18 +1966,17 @@ class RunEngine {
 
     ctx.fillStyle = "#fff";
     ctx.font = "12px monospace";
-    ctx.fillText(`Interval: ${this.stepIntervalHistory[len - 1] || 0}ms`, 8, 16);
+    ctx.fillText(`Intervalle: ${this.stepIntervalHistory[len - 1] || 0}ms`, 8, 16);
   }
 }
 
 export const runEngine = new RunEngine();
 
 /* ==========================================================================
-   APP INITIALIZATION
+   INITIALIZATION
    ========================================================================== */
 
 document.addEventListener("DOMContentLoaded", () => {
   inputLayer.init();
-  focusManager.init();
   appUI.init();
 });
