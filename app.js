@@ -235,14 +235,17 @@ class InputLayer {
       case "ArrowLeft":
         semanticEvent = "NAV_LEFT";
         if (appState.inGame) bus.emit("LEFT", { source: "keyboard" });
+        if (appState.inRun) bus.emit("STEP_LEFT", { source: "keyboard" });
         break;
       case "ArrowRight":
         semanticEvent = "NAV_RIGHT";
         if (appState.inGame) bus.emit("RIGHT", { source: "keyboard" });
+        if (appState.inRun) bus.emit("STEP_RIGHT", { source: "keyboard" });
         break;
       case "Enter":
       case " ":
         semanticEvent = "OK";
+        if (appState.inGame) bus.emit("PUNCH", { source: "keyboard" });
         break;
       case "Escape":
       case "Backspace":
@@ -279,67 +282,165 @@ class InputLayer {
     return !document.activeElement || document.activeElement.tagName !== "INPUT";
   }
 
+  isBtnDown(btn) {
+    if (!btn) return false;
+    if (typeof btn === "object") {
+      return Boolean(btn.pressed || (typeof btn.value === "number" && btn.value > 0.4));
+    }
+    return Boolean(btn > 0.4);
+  }
+
   pollGamepadLoop() {
     this.pollGamepad();
     this.rafId = requestAnimationFrame(() => this.pollGamepadLoop());
   }
 
   pollGamepad() {
-    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-    let gp = null;
-    if (this.gamepadIndex !== null && gamepads[this.gamepadIndex]) {
-      gp = gamepads[this.gamepadIndex];
-    } else {
-      for (let i = 0; i < gamepads.length; i++) {
-        if (gamepads[i]) {
-          gp = gamepads[i];
-          this.gamepadIndex = i;
-          break;
-        }
+    const rawGamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gamepads = Array.from(rawGamepads).filter(Boolean);
+    if (!gamepads.length) return;
+
+    const isModalOpen = Boolean(
+      (osk && osk.isOpen) ||
+      document.querySelector(".modal-overlay.open") ||
+      (document.getElementById("dialog") && !document.getElementById("dialog").hidden)
+    );
+
+    for (const gp of gamepads) {
+      const b = gp.buttons;
+      const gpId = `gp_${gp.index}`;
+
+      // 1. GLOBAL STEPS: L1 (button 4) and R1 (button 5) always trigger steps (for floor-mat tracker & gamepad)
+      this.checkButtonEdge(`${gpId}_l1_global`, this.isBtnDown(b[4]), () => {
+        bus.emit("STEP_LEFT", { source: "gamepad_l1" });
+      });
+      this.checkButtonEdge(`${gpId}_r1_global`, this.isBtnDown(b[5]), () => {
+        bus.emit("STEP_RIGHT", { source: "gamepad_r1" });
+      });
+
+      // L2 (button 6) and R2 (button 7) triggers also emit steps when running
+      if (appState.inRun) {
+        this.checkButtonEdge(`${gpId}_l2_step`, this.isBtnDown(b[6]), () => {
+          bus.emit("STEP_LEFT", { source: "gamepad_l2" });
+        });
+        this.checkButtonEdge(`${gpId}_r2_step`, this.isBtnDown(b[7]), () => {
+          bus.emit("STEP_RIGHT", { source: "gamepad_r2" });
+        });
+      }
+
+      // 2. STATE-SPECIFIC GAMEPAD ROUTING
+      if (isModalOpen || (!appState.inGame && !appState.inRun)) {
+        // --- MENU / MODAL / SHELL NAVIGATION ---
+        // A / Cross = OK
+        this.checkButtonEdge(`${gpId}_btn_a`, this.isBtnDown(b[0]), () => bus.emit("OK", { source: "gamepad" }));
+        // B / Circle = BACK
+        this.checkButtonEdge(`${gpId}_btn_b`, this.isBtnDown(b[1]), () => bus.emit("BACK", { source: "gamepad" }));
+        // Select / Share = BACK
+        this.checkButtonEdge(`${gpId}_btn_back`, this.isBtnDown(b[8]), () => bus.emit("BACK", { source: "gamepad" }));
+        // Start / Options = MENU
+        this.checkButtonEdge(`${gpId}_btn_start`, this.isBtnDown(b[9]), () => bus.emit("MENU", { source: "gamepad" }));
+
+        // D-Pad and Left Stick (Menu navigation repeat)
+        const up = this.isBtnDown(b[12]) || (gp.axes[1] && gp.axes[1] < -0.5);
+        const down = this.isBtnDown(b[13]) || (gp.axes[1] && gp.axes[1] > 0.5);
+        const left = this.isBtnDown(b[14]) || (gp.axes[0] && gp.axes[0] < -0.5);
+        const right = this.isBtnDown(b[15]) || (gp.axes[0] && gp.axes[0] > 0.5);
+
+        this.checkNavRepeat(`${gpId}_NAV_UP`, up, () => bus.emit("NAV_UP", { source: "gamepad" }));
+        this.checkNavRepeat(`${gpId}_NAV_DOWN`, down, () => bus.emit("NAV_DOWN", { source: "gamepad" }));
+        this.checkNavRepeat(`${gpId}_NAV_LEFT`, left, () => bus.emit("NAV_LEFT", { source: "gamepad" }));
+        this.checkNavRepeat(`${gpId}_NAV_RIGHT`, right, () => bus.emit("NAV_RIGHT", { source: "gamepad" }));
+      }
+      else if (appState.inRun) {
+        // --- VIRTUAL RUN MODE ---
+        // L1 (b[4]) & R1 (b[5]) already fired STEP_LEFT and STEP_RIGHT above.
+        // Also support D-pad Left / Right and stick for controller-based running:
+        const stickLeft = gp.axes[0] && gp.axes[0] < -0.5;
+        const stickRight = gp.axes[0] && gp.axes[0] > 0.5;
+
+        this.checkButtonEdge(`${gpId}_run_dpad_left`, this.isBtnDown(b[14]) || stickLeft, () => {
+          bus.emit("STEP_LEFT", { source: "gamepad_dpad" });
+        });
+        this.checkButtonEdge(`${gpId}_run_dpad_right`, this.isBtnDown(b[15]) || stickRight, () => {
+          bus.emit("STEP_RIGHT", { source: "gamepad_dpad" });
+        });
+
+        // Face buttons (X / Square for left step, B / Circle or A for right step)
+        this.checkButtonEdge(`${gpId}_run_btn_x`, this.isBtnDown(b[2]), () => {
+          bus.emit("STEP_LEFT", { source: "gamepad_btn_x" });
+        });
+        this.checkButtonEdge(`${gpId}_run_btn_b`, this.isBtnDown(b[1]) || this.isBtnDown(b[0]), () => {
+          bus.emit("STEP_RIGHT", { source: "gamepad_btn_b" });
+        });
+
+        // Pause / Back
+        this.checkButtonEdge(`${gpId}_run_start`, this.isBtnDown(b[9]), () => bus.emit("PAUSE", { source: "gamepad" }));
+        this.checkButtonEdge(`${gpId}_run_back`, this.isBtnDown(b[8]), () => bus.emit("BACK", { source: "gamepad" }));
+      }
+      else if (appState.inGame) {
+        // --- RHYTHM / FITNESS GAME MODE ---
+        // Crisp, instantaneous edge-detection for all D-pad directions and gamepad buttons:
+
+        // 1. D-Pad & Analog Sticks
+        const stickUp = gp.axes[1] && gp.axes[1] < -0.5;
+        const stickDown = gp.axes[1] && gp.axes[1] > 0.5;
+        const stickLeft = gp.axes[0] && gp.axes[0] < -0.5;
+        const stickRight = gp.axes[0] && gp.axes[0] > 0.5;
+
+        this.checkButtonEdge(`${gpId}_game_up`, this.isBtnDown(b[12]) || stickUp, () => {
+          bus.emit("JUMP", { source: "gamepad_dpad_up" });
+        });
+        this.checkButtonEdge(`${gpId}_game_down`, this.isBtnDown(b[13]) || stickDown, () => {
+          bus.emit("SLIDE_DOWN", { source: "gamepad_dpad_down" });
+        });
+        this.checkButtonEdge(`${gpId}_game_left`, this.isBtnDown(b[14]) || stickLeft, () => {
+          bus.emit("LEFT", { source: "gamepad_dpad_left" });
+        });
+        this.checkButtonEdge(`${gpId}_game_right`, this.isBtnDown(b[15]) || stickRight, () => {
+          bus.emit("RIGHT", { source: "gamepad_dpad_right" });
+        });
+
+        // 2. Action Buttons (Face Buttons)
+        // Button 0 (A / Cross, bottom): PUNCH
+        this.checkButtonEdge(`${gpId}_game_btn_a`, this.isBtnDown(b[0]), () => {
+          bus.emit("PUNCH", { source: "gamepad_a" });
+        });
+        // Button 1 (B / Circle, right): SLASH
+        this.checkButtonEdge(`${gpId}_game_btn_b`, this.isBtnDown(b[1]), () => {
+          bus.emit("SLASH", { source: "gamepad_b" });
+        });
+        // Button 2 (X / Square, left): PUNCH
+        this.checkButtonEdge(`${gpId}_game_btn_x`, this.isBtnDown(b[2]), () => {
+          bus.emit("PUNCH", { source: "gamepad_x" });
+        });
+        // Button 3 (Y / Triangle, top): JUMP
+        this.checkButtonEdge(`${gpId}_game_btn_y`, this.isBtnDown(b[3]), () => {
+          bus.emit("JUMP", { source: "gamepad_y" });
+        });
+
+        // 3. Shoulder & Trigger Buttons
+        // L1 (b[4]): LEFT (in addition to global STEP_LEFT)
+        this.checkButtonEdge(`${gpId}_game_l1`, this.isBtnDown(b[4]), () => {
+          bus.emit("LEFT", { source: "gamepad_l1" });
+        });
+        // R1 (b[5]): RIGHT (in addition to global STEP_RIGHT)
+        this.checkButtonEdge(`${gpId}_game_r1`, this.isBtnDown(b[5]), () => {
+          bus.emit("RIGHT", { source: "gamepad_r1" });
+        });
+        // L2 (b[6]): SLASH
+        this.checkButtonEdge(`${gpId}_game_l2`, this.isBtnDown(b[6]), () => {
+          bus.emit("SLASH", { source: "gamepad_l2" });
+        });
+        // R2 (b[7]): PUNCH
+        this.checkButtonEdge(`${gpId}_game_r2`, this.isBtnDown(b[7]), () => {
+          bus.emit("PUNCH", { source: "gamepad_r2" });
+        });
+
+        // 4. System / Pause Buttons
+        this.checkButtonEdge(`${gpId}_game_start`, this.isBtnDown(b[9]), () => bus.emit("PAUSE", { source: "gamepad" }));
+        this.checkButtonEdge(`${gpId}_game_back`, this.isBtnDown(b[8]), () => bus.emit("BACK", { source: "gamepad" }));
       }
     }
-    if (!gp) return;
-
-    const b = gp.buttons;
-
-    // STEPS (L1 = button 4, R1 = button 5)
-    this.checkButtonEdge(4, b[4]?.pressed, () => bus.emit("STEP_LEFT", { source: "gamepad" }));
-    this.checkButtonEdge(5, b[5]?.pressed, () => bus.emit("STEP_RIGHT", { source: "gamepad" }));
-
-    // Game Actions
-    this.checkButtonEdge(2, b[2]?.pressed, () => bus.emit("PUNCH", { source: "gamepad" }));
-    this.checkButtonEdge(3, b[3]?.pressed, () => bus.emit("SLASH", { source: "gamepad" }));
-    this.checkButtonEdge(9, b[9]?.pressed, () => bus.emit("PAUSE", { source: "gamepad" }));
-
-    // OK / Back
-    this.checkButtonEdge(0, b[0]?.pressed, () => {
-      bus.emit("OK", { source: "gamepad" });
-      if (appState.inGame) bus.emit("JUMP", { source: "gamepad" });
-    });
-    this.checkButtonEdge(1, b[1]?.pressed, () => bus.emit("BACK", { source: "gamepad" }));
-
-    // D-Pad and Left Stick
-    const up = b[12]?.pressed || gp.axes[1] < -0.5;
-    const down = b[13]?.pressed || gp.axes[1] > 0.5;
-    const left = b[14]?.pressed || gp.axes[0] < -0.5;
-    const right = b[15]?.pressed || gp.axes[0] > 0.5;
-
-    this.checkNavRepeat("NAV_UP", up, () => {
-      bus.emit("NAV_UP", { source: "gamepad" });
-      if (appState.inGame) bus.emit("JUMP", { source: "gamepad" });
-    });
-    this.checkNavRepeat("NAV_DOWN", down, () => {
-      bus.emit("NAV_DOWN", { source: "gamepad" });
-      if (appState.inGame) bus.emit("SLIDE_DOWN", { source: "gamepad" });
-    });
-    this.checkNavRepeat("NAV_LEFT", left, () => {
-      bus.emit("NAV_LEFT", { source: "gamepad" });
-      if (appState.inGame) bus.emit("LEFT", { source: "gamepad" });
-    });
-    this.checkNavRepeat("NAV_RIGHT", right, () => {
-      bus.emit("NAV_RIGHT", { source: "gamepad" });
-      if (appState.inGame) bus.emit("RIGHT", { source: "gamepad" });
-    });
   }
 
   checkButtonEdge(index, pressed, onDown) {
@@ -1693,11 +1794,17 @@ class GameEngine {
 
     this.unsubEvents = [
       bus.on("JUMP", () => this.handleAction("JUMP")),
+      bus.on("UP", () => this.handleAction("JUMP")),
       bus.on("RIGHT", () => this.handleAction("RIGHT")),
       bus.on("LEFT", () => this.handleAction("LEFT")),
-      bus.on("SLIDE_DOWN", () => this.handleAction("SLIDE_DOWN")),
+      bus.on("SLIDE_DOWN", () => this.handleAction("SLIDE DOWN")),
+      bus.on("SLIDE DOWN", () => this.handleAction("SLIDE DOWN")),
+      bus.on("DOWN", () => this.handleAction("SLIDE DOWN")),
       bus.on("SLASH", () => this.handleAction("SLASH")),
       bus.on("PUNCH", () => this.handleAction("PUNCH")),
+      bus.on("STEP_LEFT", () => this.handleAction("LEFT")),
+      bus.on("STEP_RIGHT", () => this.handleAction("RIGHT")),
+      bus.on("GAME_ACTION", (p) => { if (p?.action) this.handleAction(p.action); }),
       bus.on("VIDEO_REACHED_END", () => this.handleVictory())
     ];
 
@@ -1779,15 +1886,26 @@ class GameEngine {
     }
   }
 
+  matchAction(targetAction, inputAction) {
+    const norm = (a) => String(a || "").replace(/_/g, " ").trim().toUpperCase();
+    const t = norm(targetAction);
+    const i = norm(inputAction);
+    if (t === i) return true;
+    if ((t === "SLIDE DOWN" || t === "SLIDE") && (i === "SLIDE DOWN" || i === "SLIDE" || i === "DOWN")) return true;
+    if (t === "JUMP" && (i === "JUMP" || i === "UP")) return true;
+    if (t === "LEFT" && (i === "LEFT" || i === "STEP LEFT")) return true;
+    if (t === "RIGHT" && (i === "RIGHT" || i === "STEP RIGHT")) return true;
+    if (t === "PUNCH" && (i === "PUNCH" || i === "HIT" || i === "STRIKE")) return true;
+    if (t === "SLASH" && (i === "SLASH" || i === "SWORD")) return true;
+    return false;
+  }
+
   handleAction(action) {
     if (!this.active) return;
     const currentTime = videoController.getInterpolatedOriginalTime() + (appState.calibrationMs / 1000);
     const rules = this.currentGame.game?.rules || {};
     const winPerfectSec = (rules.timingWindowMs?.perfect || 150) / 1000;
     const winGoodSec = (rules.timingWindowMs?.good || 350) / 1000;
-
-    const normAction = (a) => String(a || "").replace(/_/g, " ").trim().toUpperCase();
-    const inputNorm = normAction(action);
 
     let target = null;
     let minDelta = Infinity;
@@ -1805,7 +1923,7 @@ class GameEngine {
     if (!target) return;
 
     this.judgedEvents.add(target.id);
-    if (normAction(target.action) === inputNorm) {
+    if (this.matchAction(target.action, action)) {
       this.handleSuccess(target, minDelta <= winPerfectSec);
     } else {
       this.handleFail(target, "WRONG");
