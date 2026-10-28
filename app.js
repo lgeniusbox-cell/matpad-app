@@ -7,6 +7,7 @@
  * 3. ENGINES: GameEngine (timeline rhythm overlay) and RunEngine (side-by-side table details & adaptive speed).
  * 
  * Bridges: window.TVBridge and window.TVNav exposed for Android Java WebView.
+ * Native YouTube Bridge: window.AndroidBridge integration with fallback to YouTube IFrame API.
  */
 
 /* ==========================================================================
@@ -303,7 +304,8 @@ class InputLayer {
     const isModalOpen = Boolean(
       (osk && osk.isOpen) ||
       document.querySelector(".modal-overlay.open") ||
-      (document.getElementById("dialog") && !document.getElementById("dialog").hidden)
+      (document.getElementById("dialog") && !document.getElementById("dialog").hidden) ||
+      (document.getElementById("bridge-status-overlay") && !document.getElementById("bridge-status-overlay").hidden)
     );
 
     for (const gp of gamepads) {
@@ -331,13 +333,9 @@ class InputLayer {
       // 2. STATE-SPECIFIC GAMEPAD ROUTING
       if (isModalOpen || (!appState.inGame && !appState.inRun)) {
         // --- MENU / MODAL / SHELL NAVIGATION ---
-        // A / Cross = OK
         this.checkButtonEdge(`${gpId}_btn_a`, this.isBtnDown(b[0]), () => bus.emit("OK", { source: "gamepad" }));
-        // B / Circle = BACK
         this.checkButtonEdge(`${gpId}_btn_b`, this.isBtnDown(b[1]), () => bus.emit("BACK", { source: "gamepad" }));
-        // Select / Share = BACK
         this.checkButtonEdge(`${gpId}_btn_back`, this.isBtnDown(b[8]), () => bus.emit("BACK", { source: "gamepad" }));
-        // Start / Options = MENU
         this.checkButtonEdge(`${gpId}_btn_start`, this.isBtnDown(b[9]), () => bus.emit("MENU", { source: "gamepad" }));
 
         // D-Pad and Left Stick (Menu navigation repeat)
@@ -353,8 +351,6 @@ class InputLayer {
       }
       else if (appState.inRun) {
         // --- VIRTUAL RUN MODE ---
-        // L1 (b[4]) & R1 (b[5]) already fired STEP_LEFT and STEP_RIGHT above.
-        // Also support D-pad Left / Right and stick for controller-based running:
         const stickLeft = gp.axes[0] && gp.axes[0] < -0.5;
         const stickRight = gp.axes[0] && gp.axes[0] > 0.5;
 
@@ -379,9 +375,6 @@ class InputLayer {
       }
       else if (appState.inGame) {
         // --- RHYTHM / FITNESS GAME MODE ---
-        // Crisp, instantaneous edge-detection for all D-pad directions and gamepad buttons:
-
-        // 1. D-Pad & Analog Sticks
         const stickUp = gp.axes[1] && gp.axes[1] < -0.5;
         const stickDown = gp.axes[1] && gp.axes[1] > 0.5;
         const stickLeft = gp.axes[0] && gp.axes[0] < -0.5;
@@ -400,43 +393,35 @@ class InputLayer {
           bus.emit("RIGHT", { source: "gamepad_dpad_right" });
         });
 
-        // 2. Action Buttons (Face Buttons)
-        // Button 0 (A / Cross, bottom): PUNCH
+        // Face buttons
         this.checkButtonEdge(`${gpId}_game_btn_a`, this.isBtnDown(b[0]), () => {
           bus.emit("PUNCH", { source: "gamepad_a" });
         });
-        // Button 1 (B / Circle, right): SLASH
         this.checkButtonEdge(`${gpId}_game_btn_b`, this.isBtnDown(b[1]), () => {
           bus.emit("SLASH", { source: "gamepad_b" });
         });
-        // Button 2 (X / Square, left): PUNCH
         this.checkButtonEdge(`${gpId}_game_btn_x`, this.isBtnDown(b[2]), () => {
           bus.emit("PUNCH", { source: "gamepad_x" });
         });
-        // Button 3 (Y / Triangle, top): JUMP
         this.checkButtonEdge(`${gpId}_game_btn_y`, this.isBtnDown(b[3]), () => {
           bus.emit("JUMP", { source: "gamepad_y" });
         });
 
-        // 3. Shoulder & Trigger Buttons
-        // L1 (b[4]): LEFT (in addition to global STEP_LEFT)
+        // Shoulder & Trigger Buttons
         this.checkButtonEdge(`${gpId}_game_l1`, this.isBtnDown(b[4]), () => {
           bus.emit("LEFT", { source: "gamepad_l1" });
         });
-        // R1 (b[5]): RIGHT (in addition to global STEP_RIGHT)
         this.checkButtonEdge(`${gpId}_game_r1`, this.isBtnDown(b[5]), () => {
           bus.emit("RIGHT", { source: "gamepad_r1" });
         });
-        // L2 (b[6]): SLASH
         this.checkButtonEdge(`${gpId}_game_l2`, this.isBtnDown(b[6]), () => {
           bus.emit("SLASH", { source: "gamepad_l2" });
         });
-        // R2 (b[7]): PUNCH
         this.checkButtonEdge(`${gpId}_game_r2`, this.isBtnDown(b[7]), () => {
           bus.emit("PUNCH", { source: "gamepad_r2" });
         });
 
-        // 4. System / Pause Buttons
+        // System / Pause Buttons
         this.checkButtonEdge(`${gpId}_game_start`, this.isBtnDown(b[9]), () => bus.emit("PAUSE", { source: "gamepad" }));
         this.checkButtonEdge(`${gpId}_game_back`, this.isBtnDown(b[8]), () => bus.emit("BACK", { source: "gamepad" }));
       }
@@ -612,13 +597,26 @@ export const TVNav = (() => {
       return;
     }
 
+    // 2. Modal trap: Bridge Status / Error Overlay
+    const bridgeOverlay = document.getElementById("bridge-status-overlay");
+    if (bridgeOverlay && !bridgeOverlay.hidden) {
+      const btns = Array.from(bridgeOverlay.querySelectorAll("[data-focusable]")).filter(isVisible);
+      const i = btns.indexOf(S.cur);
+      if (dirX !== 0) {
+        const nextI = i + dirX;
+        if (nextI >= 0 && nextI < btns.length) setFocus(btns[nextI]);
+        else bump(S.cur);
+      }
+      return;
+    }
+
     if (!S.cur) {
       const first = document.querySelector('.screen:not([hidden]) [data-focusable]') || document.querySelector('#rail [data-focusable]');
       if (first) setFocus(first);
       return;
     }
 
-    // 2. Modal trap: Exit Dialog
+    // 3. Modal trap: Exit Dialog
     const exitDialog = document.getElementById("dialog");
     if (exitDialog && !exitDialog.hidden) {
       const btns = Array.from(exitDialog.querySelectorAll("[data-focusable]")).filter(isVisible);
@@ -631,7 +629,7 @@ export const TVNav = (() => {
       return;
     }
 
-    // 3. Modal overlays (Pause, Controls, Summary)
+    // 4. Modal overlays (Pause, Controls, Summary)
     const openModal = document.querySelector(".modal-overlay.open");
     if (openModal) {
       const modalZones = Array.from(openModal.querySelectorAll("[data-zone]")).filter(isVisible);
@@ -660,7 +658,7 @@ export const TVNav = (() => {
       return;
     }
 
-    // 4. Normal Screen / Shelf Navigation
+    // 5. Normal Screen / Shelf Navigation
     const currentZone = S.cur.closest("[data-zone]");
     if (!currentZone) return;
     const dir = currentZone.dataset.dir || "h";
@@ -672,7 +670,6 @@ export const TVNav = (() => {
         const i = items.indexOf(S.cur);
         if (dirX < 0) {
           if (i === 0) {
-            // Left edge in content -> move to active rail button!
             const onRail = !!S.cur.closest("#rail");
             if (!onRail) {
               const activeRail = document.querySelector("#rail .rail-item.active") || document.querySelector("#rail [data-focusable]");
@@ -693,9 +690,7 @@ export const TVNav = (() => {
           }
         }
       } else if (dir === "v") {
-        // We are on rail
         if (dirX > 0) {
-          // Move right into screen content
           const target = (S.lastContent && isVisible(S.lastContent))
             ? S.lastContent
             : document.querySelector(".screen:not([hidden]) [data-focusable]");
@@ -711,7 +706,6 @@ export const TVNav = (() => {
     // VERTICAL MOVE
     if (dirY !== 0) {
       if (dir === "v") {
-        // Moving up/down inside rail
         const items = Array.from(currentZone.querySelectorAll("[data-focusable]")).filter(isVisible);
         const i = items.indexOf(S.cur);
         const nextI = i + dirY;
@@ -721,7 +715,6 @@ export const TVNav = (() => {
           setFocus(items[nextI]);
         }
       } else {
-        // Moving between shelves in active screen
         const currentScreen = S.cur.closest(".screen");
         if (!currentScreen) return;
         const shelvesZones = Array.from(currentScreen.querySelectorAll("[data-zone]")).filter(isVisible);
@@ -742,7 +735,6 @@ export const TVNav = (() => {
   }
 
   function activate(el = S.cur) {
-    // If virtual keyboard is open, trigger current keyboard action
     if (osk.isOpen) {
       osk.triggerCurrent();
       return;
@@ -751,7 +743,6 @@ export const TVNav = (() => {
     if (!el) return;
     Snd.ok();
 
-    // 1. Rail button activation
     if (el.classList.contains("rail-item")) {
       const scr = el.dataset.screen;
       if (scr) {
@@ -764,7 +755,6 @@ export const TVNav = (() => {
       return;
     }
 
-    // 2. Data Actions
     const action = el.dataset.action;
     switch (action) {
       case "goto": {
@@ -788,6 +778,18 @@ export const TVNav = (() => {
         if (r) runEngine.start(r);
         break;
       }
+      case "bridge-retry": {
+        videoController.retryLastRequest();
+        break;
+      }
+      case "bridge-cancel": {
+        videoController.stop();
+        gameEngine.stop();
+        runEngine.stop();
+        document.getElementById("video-stage")?.classList.remove("active");
+        show(appState.inGame ? "games" : "runs");
+        break;
+      }
       case "stay": {
         const dlg = document.getElementById("dialog");
         if (dlg) dlg.hidden = true;
@@ -796,6 +798,7 @@ export const TVNav = (() => {
       }
       case "exit": {
         toast("Au revoir !");
+        videoController.stop();
         try {
           if (window.Android && typeof window.Android.closeApp === "function") {
             window.Android.closeApp();
@@ -924,6 +927,7 @@ export const TVNav = (() => {
       }
       case "back-to-sessions": {
         appUI.closeModal("modal-summary");
+        videoController.stop();
         document.getElementById("video-stage")?.classList.remove("active");
         show(appState.inGame ? "games" : "runs");
         break;
@@ -941,13 +945,23 @@ export const TVNav = (() => {
   }
 
   function back() {
-    // If virtual keyboard is open, close it
     if (osk.isOpen) {
       osk.close();
       return;
     }
 
-    // 1. Exit dialog open
+    // 1. If native bridge status overlay is open, cancel stream and return
+    const bridgeOverlay = document.getElementById("bridge-status-overlay");
+    if (bridgeOverlay && !bridgeOverlay.hidden) {
+      videoController.stop();
+      gameEngine.stop();
+      runEngine.stop();
+      document.getElementById("video-stage")?.classList.remove("active");
+      show(appState.inGame ? "games" : "runs");
+      return;
+    }
+
+    // 2. Exit dialog open
     const dlg = document.getElementById("dialog");
     if (dlg && !dlg.hidden) {
       dlg.hidden = true;
@@ -955,20 +969,20 @@ export const TVNav = (() => {
       return;
     }
 
-    // 2. Open modal overlay
+    // 3. Open modal overlay
     const openModal = document.querySelector(".modal-overlay.open");
     if (openModal) {
       appUI.closeModal(openModal.id);
       return;
     }
 
-    // 3. Video stage active
+    // 4. Video stage active
     if (appState.inGame || appState.inRun) {
       appUI.openPauseMenu();
       return;
     }
 
-    // 4. Focus in screen content -> move back to active rail button
+    // 5. Focus in screen content -> move back to active rail button
     const onRail = !!S.cur?.closest("#rail");
     if (!onRail) {
       const activeRail = document.querySelector("#rail .rail-item.active") || document.querySelector("#rail [data-focusable]");
@@ -978,7 +992,7 @@ export const TVNav = (() => {
       }
     }
 
-    // 5. Already on rail: if not home, go to home; if on home, open exit dialog
+    // 6. Already on rail: if not home, go to home; if on home, open exit dialog
     if (S.screen !== "home") {
       show("home");
     } else {
@@ -1041,8 +1055,8 @@ class OnScreenKeyboard {
     ];
     this.row = 0;
     this.col = 0;
-    this.keyElements = []; // [row][col]
-    this.actionElements = []; // [space, backspace, done]
+    this.keyElements = [];
+    this.actionElements = [];
     this.isOpen = false;
   }
 
@@ -1153,7 +1167,6 @@ class OnScreenKeyboard {
   move(dirX, dirY) {
     if (!this.isOpen) return;
 
-    // HORIZONTAL NAVIGATION
     if (dirX !== 0) {
       if (this.row < 6) {
         const nextCol = this.col + dirX;
@@ -1175,15 +1188,12 @@ class OnScreenKeyboard {
       return;
     }
 
-    // VERTICAL NAVIGATION
     if (dirY !== 0) {
       if (dirY < 0) {
-        // UP
         if (this.row === 0) {
           Snd.bump();
         } else if (this.row === 6) {
           this.row = 5;
-          // Map actions (0, 1, 2) back to keys (1, 3, 5)
           this.col = Math.min(5, this.col * 2 + 1);
           this.focusCurrent();
         } else {
@@ -1191,12 +1201,10 @@ class OnScreenKeyboard {
           this.focusCurrent();
         }
       } else if (dirY > 0) {
-        // DOWN
         if (this.row === 6) {
           Snd.bump();
         } else if (this.row === 5) {
           this.row = 6;
-          // Map 6 columns (0,1->0, 2,3->1, 4,5->2) to 3 action buttons
           this.col = Math.min(2, Math.floor(this.col / 2));
           this.focusCurrent();
         } else {
@@ -1241,7 +1249,7 @@ class OnScreenKeyboard {
 export const osk = new OnScreenKeyboard();
 
 /* ==========================================================================
-   UI CONTROLLER & CONTENT LOADER (5.1 JSON CONTRACT)
+   UI CONTROLLER & CONTENT LOADER
    ========================================================================== */
 
 class AppUI {
@@ -1257,10 +1265,8 @@ class AppUI {
     this.setupProfileUI();
     osk.init();
 
-    // Fetch games & virtual runs
     await Promise.all([this.loadGames(), this.loadRuns()]);
 
-    // Initial focus on first home tile
     const firstTile = document.querySelector("#sh-home [data-focusable]");
     if (firstTile) TVNav.setFocus(firstTile, false);
   }
@@ -1289,7 +1295,7 @@ class AppUI {
     document.addEventListener("click", (e) => {
       const target = e.target.closest("[data-focusable]");
       if (!target) return;
-      if (target.closest("#modal-osk")) return; // Managed directly by OSK key handlers
+      if (target.closest("#modal-osk")) return;
       TVNav.activate(target);
     });
   }
@@ -1570,6 +1576,48 @@ export const appUI = new AppUI();
    LAYER 3: VIDEO CONTROLLER & GAME ENGINES
    ========================================================================== */
 
+/**
+ * Converts any YouTube embed URL, short URL, or video ID into a full standard watch URL:
+ * https://www.youtube.com/watch?v=VIDEO_ID
+ */
+export function toYouTubeWatchUrl(input) {
+  if (!input) return "";
+  const str = String(input).trim();
+
+  // Already standard watch URL
+  if (/^https?:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]+/i.test(str)) {
+    return str;
+  }
+  // youtu.be/ID
+  const shortMatch = str.match(/youtu\.be\/([\w-]+)/i);
+  if (shortMatch && shortMatch[1]) {
+    return `https://www.youtube.com/watch?v=${shortMatch[1]}`;
+  }
+  // youtube.com/embed/ID
+  const embedMatch = str.match(/youtube\.com\/embed\/([\w-]+)/i);
+  if (embedMatch && embedMatch[1]) {
+    return `https://www.youtube.com/watch?v=${embedMatch[1]}`;
+  }
+  // youtube.com/v/ID
+  const vMatch = str.match(/youtube\.com\/v\/([\w-]+)/i);
+  if (vMatch && vMatch[1]) {
+    return `https://www.youtube.com/watch?v=${vMatch[1]}`;
+  }
+  // Standard 11-char ID
+  if (/^[\w-]{11}$/.test(str)) {
+    return `https://www.youtube.com/watch?v=${str}`;
+  }
+  // Query parameter ?v=
+  try {
+    const urlObj = new URL(str);
+    const vParam = urlObj.searchParams.get("v");
+    if (vParam) return `https://www.youtube.com/watch?v=${vParam}`;
+  } catch (_) {}
+
+  // Fallback
+  return `https://www.youtube.com/watch?v=${str}`;
+}
+
 class VideoController {
   constructor() {
     this.player = null;
@@ -1577,6 +1625,44 @@ class VideoController {
     this.config = null;
     this.lastPolledTime = 0;
     this.lastPollTimestamp = 0;
+
+    // Native Bridge state
+    this.isBridgeMode = false;
+    this.bridgeVideoElement = null;
+    this.currentWatchUrl = "";
+    this.loadResolveFn = null;
+    this.loadTimeoutId = null;
+
+    this.initNativeBridgeCallbacks();
+  }
+
+  /**
+   * Detects if the Android TV native stream bridge is available.
+   * Requirement 1: typeof window.AndroidBridge !== "undefined"
+   */
+  hasNativeBridge() {
+    return typeof window.AndroidBridge !== "undefined" &&
+      typeof window.AndroidBridge.requestVideo === "function";
+  }
+
+  /**
+   * Initializes global callback functions called by Android native code:
+   * - window.onStreamProgress(percent, bufferedSeconds)
+   * - window.onStreamReady(localUrl)
+   * - window.onStreamError(message)
+   */
+  initNativeBridgeCallbacks() {
+    window.onStreamProgress = (percent, bufferedSeconds) => {
+      this.handleStreamProgress(percent, bufferedSeconds);
+    };
+
+    window.onStreamReady = (localUrl) => {
+      this.handleStreamReady(localUrl);
+    };
+
+    window.onStreamError = (message) => {
+      this.handleStreamError(message);
+    };
   }
 
   initApi() {
@@ -1600,14 +1686,107 @@ class VideoController {
         };
         document.head.appendChild(tag);
       }
-      // Safety timeout: resolve anyway after 2.5s so UI never freezes
       setTimeout(() => resolve(), 2500);
     });
   }
 
+  /**
+   * Main entrypoint to load and play a video.
+   * Uses AndroidBridge if available, or falls back to YouTube IFrame API.
+   */
   async loadVideo(videoConfig) {
-    await this.initApi();
     this.config = videoConfig;
+
+    // 1. Cancel any active native video stream before starting another one (Requirement 5)
+    this.cancelNativeVideo();
+
+    // 2. Check if running inside Android TV WebView shell with native bridge
+    if (this.hasNativeBridge()) {
+      return this.loadVideoViaBridge(videoConfig);
+    } else {
+      return this.loadVideoViaIframe(videoConfig);
+    }
+  }
+
+  /**
+   * Requirement 1 & 2: Native Bridge Pipeline with HTML5 <video> element
+   */
+  loadVideoViaBridge(videoConfig) {
+    this.isBridgeMode = true;
+    this.ensureBridgeUi();
+
+    // Requirement 3: Convert embed URL or video ID to full watch URL
+    const rawIdOrUrl = videoConfig.url || videoConfig.videoId || "";
+    this.currentWatchUrl = toYouTubeWatchUrl(rawIdOrUrl);
+
+    console.info(`[VideoController] Native bridge active. Requesting: ${this.currentWatchUrl}`);
+
+    // Show loading overlay
+    this.showBridgeOverlay("loading", {
+      title: "Téléchargement du flux local…",
+      subtitle: "Résolution NewPipe & Streaming HTTP 206",
+      percent: 0,
+      bufferedSecs: 0
+    });
+
+    // Hide iframe container if previously present
+    const iframePlaceholder = document.getElementById("yt-iframe-placeholder");
+    if (iframePlaceholder) iframePlaceholder.style.display = "none";
+
+    // Setup HTML5 video element
+    const video = this.bridgeVideoElement;
+    if (video) {
+      video.style.display = "block";
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      if (videoConfig.audioMuted) video.muted = true;
+      else video.muted = false;
+    }
+
+    // Build unified player adapter for GameEngine and RunEngine
+    this.buildVideoAdapter();
+
+    return new Promise((resolve) => {
+      this.loadResolveFn = resolve;
+
+      // Request native download & streaming
+      try {
+        window.AndroidBridge.requestVideo(this.currentWatchUrl);
+      } catch (err) {
+        console.error("AndroidBridge.requestVideo call failed:", err);
+        this.handleStreamError("Impossible de démarrer le streaming natif : " + err.message);
+      }
+
+      // Safety fallback timeout
+      if (this.loadTimeoutId) clearTimeout(this.loadTimeoutId);
+      this.loadTimeoutId = setTimeout(() => {
+        if (this.loadResolveFn) {
+          console.warn("[VideoController] Bridge ready timeout reached, proceeding with engine loop");
+          const r = this.loadResolveFn;
+          this.loadResolveFn = null;
+          r(this.player);
+        }
+      }, 45000);
+    });
+  }
+
+  /**
+   * Normal browser fallback: YouTube IFrame API
+   */
+  async loadVideoViaIframe(videoConfig) {
+    this.isBridgeMode = false;
+    this.hideBridgeOverlay();
+
+    if (this.bridgeVideoElement) {
+      this.bridgeVideoElement.style.display = "none";
+      this.bridgeVideoElement.pause();
+    }
+
+    const iframePlaceholder = document.getElementById("yt-iframe-placeholder");
+    if (iframePlaceholder) iframePlaceholder.style.display = "block";
+
+    await this.initApi();
 
     return new Promise((resolve) => {
       let resolved = false;
@@ -1618,7 +1797,6 @@ class VideoController {
         }
       };
 
-      // Safety timeout: ensure game/run engine always starts loop within 3s
       setTimeout(() => {
         if (!resolved) {
           console.warn("YouTube player ready timeout - starting engine loop");
@@ -1682,6 +1860,316 @@ class VideoController {
     });
   }
 
+  /**
+   * Ensures the <video> element and loading/error overlay DOM elements exist.
+   * Requirement 2 & 4: Replace iframe with <video> and show loading/error states.
+   */
+  ensureBridgeUi() {
+    let container = document.getElementById("yt-player-container");
+    if (!container) {
+      container = document.getElementById("video-stage") || document.body;
+    }
+
+    // 1. Create or bind <video> element
+    if (!this.bridgeVideoElement) {
+      let video = document.getElementById("native-bridge-video");
+      if (!video) {
+        video = document.createElement("video");
+        video.id = "native-bridge-video";
+        video.className = "native-bridge-player";
+        video.setAttribute("playsinline", "");
+        video.setAttribute("controls", "");
+        video.autoplay = true;
+        video.style.cssText = `
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          background: #000;
+          position: absolute;
+          inset: 0;
+          z-index: 2;
+        `;
+        container.appendChild(video);
+      }
+      this.bridgeVideoElement = video;
+
+      video.addEventListener("ended", () => {
+        bus.emit("VIDEO_REACHED_END");
+      });
+    }
+
+    // 2. Create or bind overlay HUD (Loading & Error state)
+    let overlay = document.getElementById("bridge-status-overlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "bridge-status-overlay";
+      overlay.className = "bridge-status-overlay";
+      overlay.style.cssText = `
+        position: absolute;
+        inset: 0;
+        z-index: 15;
+        background: rgba(10, 14, 23, 0.94);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #f8fafc;
+        font-family: system-ui, -apple-system, sans-serif;
+        padding: 32px;
+        text-align: center;
+      `;
+      overlay.innerHTML = `
+        <div id="bridge-status-card" style="max-width: 560px; width: 100%; background: #131c2e; border: 1px solid #334155; border-radius: 20px; padding: 36px 32px; box-shadow: 0 20px 40px rgba(0,0,0,0.7);">
+          <!-- Loading View -->
+          <div id="bridge-loading-view">
+            <div style="width: 64px; height: 64px; border: 4px solid rgba(16, 185, 129, 0.2); border-top-color: #10b981; border-radius: 50%; margin: 0 auto 24px; animation: bridge-spin 1s linear infinite;"></div>
+            <h3 id="bridge-loading-title" style="font-size: 24px; font-weight: 700; color: #f1f5f9; margin: 0 0 10px;">Préparation du flux…</h3>
+            <p id="bridge-loading-sub" style="font-size: 14px; color: #94a3b8; margin: 0 0 24px; font-family: monospace;">Mise en mémoire tampon progressive (120s)</p>
+            
+            <div style="background: #0f172a; border-radius: 999px; height: 12px; width: 100%; overflow: hidden; margin-bottom: 14px; border: 1px solid #1e293b;">
+              <div id="bridge-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #10b981, #38bdf8); transition: width 0.3s ease;"></div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; font-family: monospace; font-size: 13px; color: #cbd5e1;">
+              <span id="bridge-progress-pct">0.0%</span>
+              <span id="bridge-buffered-secs">0.0s / ~120s</span>
+            </div>
+          </div>
+
+          <!-- Error View -->
+          <div id="bridge-error-view" style="display: none;">
+            <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(239, 68, 68, 0.2); color: #ef4444; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 20px; font-weight: bold;">✕</div>
+            <h3 style="font-size: 24px; font-weight: 700; color: #f87171; margin: 0 0 12px;">Erreur de lecture vidéo</h3>
+            <p id="bridge-error-msg" style="font-size: 15px; color: #cbd5e1; margin: 0 0 28px; line-height: 1.5;"></p>
+            
+            <div style="display: flex; gap: 16px; justify-content: center;" data-zone data-dir="h">
+              <button type="button" id="btn-bridge-retry" class="bridge-btn bridge-btn-primary" data-action="bridge-retry" data-focusable tabindex="0" style="padding: 14px 28px; font-size: 16px; font-weight: 700; background: #10b981; color: #022c22; border: none; border-radius: 12px; cursor: pointer;">
+                Réessayer
+              </button>
+              <button type="button" id="btn-bridge-cancel" class="bridge-btn bridge-btn-cancel" data-action="bridge-cancel" data-focusable tabindex="0" style="padding: 14px 24px; font-size: 16px; font-weight: 600; background: #334155; color: #f1f5f9; border: none; border-radius: 12px; cursor: pointer;">
+                Quitter
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <style>
+          @keyframes bridge-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          .bridge-btn:focus, .bridge-btn.is-focused {
+            outline: 3px solid #38bdf8 !important;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.6) !important;
+            transform: scale(1.06);
+          }
+        </style>
+      `;
+      container.appendChild(overlay);
+
+      document.getElementById("btn-bridge-retry")?.addEventListener("click", () => {
+        this.retryLastRequest();
+      });
+      document.getElementById("btn-bridge-cancel")?.addEventListener("click", () => {
+        TVNav.activate(document.getElementById("btn-bridge-cancel"));
+      });
+    }
+  }
+
+  showBridgeOverlay(type, data = {}) {
+    const overlay = document.getElementById("bridge-status-overlay");
+    if (!overlay) return;
+    overlay.hidden = false;
+    overlay.style.display = "flex";
+
+    const loadingView = document.getElementById("bridge-loading-view");
+    const errorView = document.getElementById("bridge-error-view");
+
+    if (type === "loading") {
+      if (loadingView) loadingView.style.display = "block";
+      if (errorView) errorView.style.display = "none";
+      if (data.title) document.getElementById("bridge-loading-title").textContent = data.title;
+      if (data.subtitle) document.getElementById("bridge-loading-sub").textContent = data.subtitle;
+    } else if (type === "error") {
+      if (loadingView) loadingView.style.display = "none";
+      if (errorView) errorView.style.display = "block";
+      const errEl = document.getElementById("bridge-error-msg");
+      if (errEl) errEl.textContent = data.message || "Une erreur est survenue lors du streaming.";
+
+      setTimeout(() => {
+        const retryBtn = document.getElementById("btn-bridge-retry");
+        if (retryBtn) TVNav.setFocus(retryBtn);
+      }, 60);
+    }
+  }
+
+  hideBridgeOverlay() {
+    const overlay = document.getElementById("bridge-status-overlay");
+    if (overlay) {
+      overlay.hidden = true;
+      overlay.style.display = "none";
+    }
+  }
+
+  /**
+   * Adapts the native HTML5 <video> element to match the YouTube Player API
+   * expected by GameEngine and RunEngine (playVideo, pauseVideo, seekTo, etc.).
+   */
+  buildVideoAdapter() {
+    const video = this.bridgeVideoElement;
+    if (!video) return;
+
+    this.player = {
+      playVideo: () => {
+        if (this.bridgeVideoElement) {
+          return this.bridgeVideoElement.play().catch(e => {
+            console.warn("Auto-play prevented or stream error:", e);
+          });
+        }
+      },
+      pauseVideo: () => {
+        if (this.bridgeVideoElement) {
+          this.bridgeVideoElement.pause();
+        }
+      },
+      seekTo: (seconds, allowSeekAhead) => {
+        if (this.bridgeVideoElement) {
+          this.bridgeVideoElement.currentTime = seconds;
+        }
+      },
+      getCurrentTime: () => {
+        return this.bridgeVideoElement ? this.bridgeVideoElement.currentTime : 0;
+      },
+      getPlayerState: () => {
+        if (!this.bridgeVideoElement) return -1;
+        if (this.bridgeVideoElement.ended) return 0; // ended
+        if (this.bridgeVideoElement.seeking || this.bridgeVideoElement.readyState < 3) return 3; // buffering
+        if (!this.bridgeVideoElement.paused) return 1; // playing
+        return 2; // paused
+      },
+      setPlaybackRate: (rate) => {
+        if (this.bridgeVideoElement) {
+          this.bridgeVideoElement.playbackRate = rate;
+        }
+      },
+      getPlaybackRate: () => {
+        return this.bridgeVideoElement ? this.bridgeVideoElement.playbackRate : 1.0;
+      },
+      getAvailablePlaybackRates: () => [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+      mute: () => {
+        if (this.bridgeVideoElement) this.bridgeVideoElement.muted = true;
+      },
+      unMute: () => {
+        if (this.bridgeVideoElement) this.bridgeVideoElement.muted = false;
+      },
+      stopVideo: () => {
+        if (this.bridgeVideoElement) {
+          this.bridgeVideoElement.pause();
+          this.bridgeVideoElement.removeAttribute("src");
+          this.bridgeVideoElement.load();
+        }
+      }
+    };
+  }
+
+  /**
+   * Callback received from Android Native code:
+   * window.onStreamProgress(percent, bufferedSeconds)
+   */
+  handleStreamProgress(percent, bufferedSeconds) {
+    const bar = document.getElementById("bridge-progress-bar");
+    const pctEl = document.getElementById("bridge-progress-pct");
+    const bufEl = document.getElementById("bridge-buffered-secs");
+
+    const p = Math.max(0, Math.min(100, Number(percent) || 0));
+    const s = Math.max(0, Number(bufferedSeconds) || 0);
+
+    if (bar) bar.style.width = `${p}%`;
+    if (pctEl) pctEl.textContent = `${p.toFixed(1)}%`;
+    if (bufEl) bufEl.textContent = `${s.toFixed(1)}s / ~120s buffer`;
+  }
+
+  /**
+   * Callback received from Android Native code:
+   * window.onStreamReady(localUrl)
+   */
+  handleStreamReady(localUrl) {
+    console.info(`[VideoController] onStreamReady: ${localUrl}`);
+    if (this.loadTimeoutId) {
+      clearTimeout(this.loadTimeoutId);
+      this.loadTimeoutId = null;
+    }
+
+    this.hideBridgeOverlay();
+
+    const video = this.bridgeVideoElement;
+    if (video) {
+      video.src = localUrl;
+
+      const startSecs = this.config?.trimStart || 0;
+      if (startSecs > 0) {
+        const onLoadedMeta = () => {
+          video.removeEventListener("loadedmetadata", onLoadedMeta);
+          video.currentTime = startSecs;
+        };
+        video.addEventListener("loadedmetadata", onLoadedMeta);
+      }
+
+      video.play().catch(err => {
+        console.warn("Video playback auto-start error:", err);
+      });
+
+      this.startWatcher();
+    }
+
+    if (this.loadResolveFn) {
+      const fn = this.loadResolveFn;
+      this.loadResolveFn = null;
+      fn(this.player);
+    }
+  }
+
+  /**
+   * Callback received from Android Native code:
+   * window.onStreamError(message)
+   */
+  handleStreamError(message) {
+    console.error(`[VideoController] onStreamError: ${message}`);
+    if (this.loadTimeoutId) {
+      clearTimeout(this.loadTimeoutId);
+      this.loadTimeoutId = null;
+    }
+
+    this.showBridgeOverlay("error", {
+      message: message || "Erreur lors du téléchargement du flux YouTube."
+    });
+    TVNav.toast("Erreur de streaming");
+  }
+
+  /**
+   * Retries requesting the current video URL after an error.
+   */
+  retryLastRequest() {
+    if (this.config) {
+      this.loadVideo(this.config);
+    }
+  }
+
+  /**
+   * Requirement 5: Call cancelVideo() when the user leaves the video,
+   * closes the player, or picks another video.
+   */
+  cancelNativeVideo() {
+    if (this.hasNativeBridge()) {
+      try {
+        console.info("[VideoController] Calling window.AndroidBridge.cancelVideo()");
+        window.AndroidBridge.cancelVideo();
+      } catch (err) {
+        console.warn("Error calling AndroidBridge.cancelVideo():", err);
+      }
+    }
+  }
+
   startWatcher() {
     if (this.watcher) clearInterval(this.watcher);
     this.lastPolledTime = 0;
@@ -1723,13 +2211,26 @@ class VideoController {
   }
 
   getInterpolatedOriginalTime() {
+    if (this.isBridgeMode && this.bridgeVideoElement) {
+      return this.bridgeVideoElement.currentTime;
+    }
     if (!this.player) return 0;
     const elapsedSec = (performance.now() - this.lastPollTimestamp) / 1000;
     return this.lastPolledTime + elapsedSec;
   }
 
+  /**
+   * Stops video playback and releases resources.
+   * Requirement 5: cancels native download stream.
+   */
   stop() {
     if (this.watcher) clearInterval(this.watcher);
+    if (this.loadTimeoutId) clearTimeout(this.loadTimeoutId);
+    this.hideBridgeOverlay();
+
+    // Stop native download
+    this.cancelNativeVideo();
+
     try {
       if (this.player && typeof this.player.stopVideo === "function") {
         this.player.stopVideo();
@@ -2176,7 +2677,7 @@ class RunEngine {
       stage.classList.remove("mode-game");
     }
 
-    // Show Left Table Panel, HIDE GAME HUD COMPLETELY (NO HEARTS, NO SCORE)
+    // Show Left Table Panel, HIDE GAME HUD COMPLETELY
     const runPanel = document.getElementById("run-panel");
     if (runPanel) {
       runPanel.classList.remove("hidden");
@@ -2227,7 +2728,6 @@ class RunEngine {
     if (foot === "LEFT") this.leftSteps++;
     else this.rightSteps++;
 
-    // Foot flash on left sidebar indicator
     const footEl = document.getElementById(foot === "LEFT" ? "foot-left-ind" : "foot-right-ind");
     if (footEl) {
       footEl.classList.add("flash");
@@ -2245,7 +2745,7 @@ class RunEngine {
     this.updateMetrics();
     this.distanceKm = (this.totalSteps * appState.profile.strideLengthM) / 1000;
 
-    // Add mechanical step energy expenditure scaled by weight and speed
+    // Mechanical step energy expenditure
     const weight = appState.profile.weightKg || 70;
     const stepWorkKcal = 0.038 * (weight / 70) * (Math.max(4, this.smoothedSpeedKmh) / 8.0);
     this.calories += stepWorkKcal;
@@ -2297,7 +2797,6 @@ class RunEngine {
       } else {
         this.movingTimeSec++;
 
-        // MET Aerobic Expenditure per second based on player age, weight, and speed
         const age = appState.profile.age || 28;
         const weight = appState.profile.weightKg || 70;
         let met = 2.0;
