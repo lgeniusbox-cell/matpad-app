@@ -3,8 +3,8 @@
  * Android TV 10-Foot UI, Remote D-Pad, Gamepad & Floor-Mat Step Tracker
  * 
  * 1. INPUT LAYER: Converts raw keyboard/gamepad/remote into SEMANTIC EVENTS on EventBus.
- * 2. APP / UI LAYER: Spatial focus navigation engine (TVNav), Shelves, Cards, Modals.
- * 3. ENGINES: GameEngine (timeline rhythm) and RunEngine (cadence/speed).
+ * 2. APP / UI LAYER: Spatial focus navigation engine (TVNav), Shelves, Cards, Modals, 2D OSK.
+ * 3. ENGINES: GameEngine (timeline rhythm overlay) and RunEngine (side-by-side table details & adaptive speed).
  * 
  * Bridges: window.TVBridge and window.TVNav exposed for Android Java WebView.
  */
@@ -152,6 +152,11 @@ class InputLayer {
   }
 
   handleKeyDown(e) {
+    // If virtual keyboard is open, let OSK handle typing and navigation
+    if (osk.isOpen) {
+      return;
+    }
+
     // 1. FLOOR-MAT TRACKER / STEP INPUTS (Alt+R, Alt+L, fallback R, L)
     const isKeyR = e.code === "KeyR" || e.key === "r" || e.key === "R";
     const isKeyL = e.code === "KeyL" || e.key === "l" || e.key === "L";
@@ -347,8 +352,9 @@ class AppState {
     return {
       playerName: "Champion TV",
       theme: "adult",
-      strideLengthM: 0.75,
+      age: 28,
       weightKg: 70,
+      strideLengthM: 0.75,
       bestScores: {},
       bestRuns: {}
     };
@@ -454,13 +460,19 @@ export const TVNav = (() => {
   }
 
   function move(dirX, dirY) {
+    // 1. If Virtual Keyboard (OSK) is open, delegate strictly to OSK 2D grid
+    if (osk.isOpen) {
+      osk.move(dirX, dirY);
+      return;
+    }
+
     if (!S.cur) {
       const first = document.querySelector('.screen:not([hidden]) [data-focusable]') || document.querySelector('#rail [data-focusable]');
       if (first) setFocus(first);
       return;
     }
 
-    // Modal trap: if exit dialog is open, restrict navigation strictly inside it
+    // 2. Modal trap: Exit Dialog
     const exitDialog = document.getElementById("dialog");
     if (exitDialog && !exitDialog.hidden) {
       const btns = Array.from(exitDialog.querySelectorAll("[data-focusable]")).filter(isVisible);
@@ -473,7 +485,7 @@ export const TVNav = (() => {
       return;
     }
 
-    // Check open modal overlays (pause, controls, osk, summary)
+    // 3. Modal overlays (Pause, Controls, Summary)
     const openModal = document.querySelector(".modal-overlay.open");
     if (openModal) {
       const modalZones = Array.from(openModal.querySelectorAll("[data-zone]")).filter(isVisible);
@@ -502,7 +514,7 @@ export const TVNav = (() => {
       return;
     }
 
-    // Normal Screen / Shelf Navigation
+    // 4. Normal Screen / Shelf Navigation
     const currentZone = S.cur.closest("[data-zone]");
     if (!currentZone) return;
     const dir = currentZone.dataset.dir || "h";
@@ -584,6 +596,12 @@ export const TVNav = (() => {
   }
 
   function activate(el = S.cur) {
+    // If virtual keyboard is open, trigger current keyboard action
+    if (osk.isOpen) {
+      osk.triggerCurrent();
+      return;
+    }
+
     if (!el) return;
     Snd.ok();
 
@@ -592,7 +610,6 @@ export const TVNav = (() => {
       const scr = el.dataset.screen;
       if (scr) {
         show(scr);
-        // Step into screen content immediately
         setTimeout(() => {
           const firstInScreen = document.querySelector(`.screen[data-screen="${scr}"]:not([hidden]) [data-focusable]`);
           if (firstInScreen) setFocus(firstInScreen);
@@ -681,6 +698,34 @@ export const TVNav = (() => {
         });
         break;
       }
+      case "age-minus": {
+        appState.profile.age = Math.max(10, (appState.profile.age || 28) - 1);
+        const ageEl = document.getElementById("profile-age-val");
+        if (ageEl) ageEl.textContent = `${appState.profile.age} ans`;
+        appState.saveProfile();
+        break;
+      }
+      case "age-plus": {
+        appState.profile.age = Math.min(99, (appState.profile.age || 28) + 1);
+        const ageEl = document.getElementById("profile-age-val");
+        if (ageEl) ageEl.textContent = `${appState.profile.age} ans`;
+        appState.saveProfile();
+        break;
+      }
+      case "weight-minus": {
+        appState.profile.weightKg = Math.max(30, (appState.profile.weightKg || 70) - 1);
+        const weightEl = document.getElementById("profile-weight-val");
+        if (weightEl) weightEl.textContent = `${appState.profile.weightKg} kg`;
+        appState.saveProfile();
+        break;
+      }
+      case "weight-plus": {
+        appState.profile.weightKg = Math.min(180, (appState.profile.weightKg || 70) + 1);
+        const weightEl = document.getElementById("profile-weight-val");
+        if (weightEl) weightEl.textContent = `${appState.profile.weightKg} kg`;
+        appState.saveProfile();
+        break;
+      }
       case "stride-minus": {
         appState.profile.strideLengthM = Math.max(0.4, Number((appState.profile.strideLengthM - 0.05).toFixed(2)));
         const strideEl = document.getElementById("profile-stride-val");
@@ -738,7 +783,6 @@ export const TVNav = (() => {
         break;
       }
       default: {
-        // Theme buttons
         if (el.classList.contains("theme-selector-btn")) {
           const theme = el.dataset.theme;
           appState.profile.theme = theme;
@@ -751,6 +795,12 @@ export const TVNav = (() => {
   }
 
   function back() {
+    // If virtual keyboard is open, close it
+    if (osk.isOpen) {
+      osk.close();
+      return;
+    }
+
     // 1. Exit dialog open
     const dlg = document.getElementById("dialog");
     if (dlg && !dlg.hidden) {
@@ -825,8 +875,246 @@ export const TVNav = (() => {
   };
 })();
 
-// Also expose TVNav on window for test suites and Android WebView
 window.TVNav = TVNav;
+
+/* ==========================================================================
+   ON-SCREEN KEYBOARD (2D LOGICAL MATRIX NAVIGATION)
+   ========================================================================== */
+
+class OnScreenKeyboard {
+  constructor() {
+    this.currentText = "";
+    this.callback = null;
+    this.matrix = [
+      ["A", "B", "C", "D", "E", "F"],
+      ["G", "H", "I", "J", "K", "L"],
+      ["M", "N", "O", "P", "Q", "R"],
+      ["S", "T", "U", "V", "W", "X"],
+      ["Y", "Z", "1", "2", "3", "4"],
+      ["5", "6", "7", "8", "9", "0"]
+    ];
+    this.row = 0;
+    this.col = 0;
+    this.keyElements = []; // [row][col]
+    this.actionElements = []; // [space, backspace, done]
+    this.isOpen = false;
+  }
+
+  init() {
+    const container = document.getElementById("osk-keys-matrix");
+    if (!container) return;
+    container.innerHTML = "";
+    this.keyElements = [];
+
+    this.matrix.forEach((r, rIdx) => {
+      const rowEl = document.createElement("div");
+      rowEl.className = "osk-row";
+      const rowArr = [];
+
+      r.forEach((char, cIdx) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "osk-key";
+        btn.setAttribute("data-focusable", "");
+        btn.textContent = char;
+        btn.dataset.char = char;
+
+        btn.addEventListener("click", () => {
+          this.insertChar(char);
+          this.focusKey(rIdx, cIdx);
+        });
+
+        rowEl.appendChild(btn);
+        rowArr.push(btn);
+      });
+
+      container.appendChild(rowEl);
+      this.keyElements.push(rowArr);
+    });
+
+    const spaceBtn = document.getElementById("btn-osk-space");
+    const backspaceBtn = document.getElementById("btn-osk-backspace");
+    const doneBtn = document.getElementById("btn-osk-done");
+
+    this.actionElements = [spaceBtn, backspaceBtn, doneBtn].filter(Boolean);
+
+    spaceBtn?.addEventListener("click", () => {
+      this.insertChar(" ");
+      this.row = 6;
+      this.col = 0;
+      this.focusCurrent();
+    });
+
+    backspaceBtn?.addEventListener("click", () => {
+      this.deleteChar();
+      this.row = 6;
+      this.col = 1;
+      this.focusCurrent();
+    });
+
+    doneBtn?.addEventListener("click", () => {
+      this.confirm();
+    });
+
+    // Support typing with physical keyboard when OSK is open
+    window.addEventListener("keydown", (e) => {
+      if (!this.isOpen) return;
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.deleteChar();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.triggerCurrent();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.close();
+      } else if (e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.insertChar(" ");
+      } else if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.insertChar(e.key.toUpperCase());
+      }
+    }, true);
+  }
+
+  open(initial, cb) {
+    this.currentText = initial || "";
+    this.callback = cb;
+    this.isOpen = true;
+    this.updateDisplay();
+    appUI.openModal("modal-osk");
+    this.row = 0;
+    this.col = 0;
+    setTimeout(() => this.focusCurrent(), 60);
+  }
+
+  close() {
+    this.isOpen = false;
+    appUI.closeModal("modal-osk");
+  }
+
+  insertChar(c) {
+    if (this.currentText.length < 24) {
+      this.currentText += c;
+      this.updateDisplay();
+      Snd.tick();
+    }
+  }
+
+  deleteChar() {
+    if (this.currentText.length > 0) {
+      this.currentText = this.currentText.slice(0, -1);
+      this.updateDisplay();
+      Snd.tick();
+    }
+  }
+
+  confirm() {
+    this.close();
+    Snd.ok();
+    if (this.callback) this.callback(this.currentText.trim());
+  }
+
+  updateDisplay() {
+    const el = document.getElementById("osk-input-text");
+    if (el) el.textContent = this.currentText;
+  }
+
+  move(dirX, dirY) {
+    if (!this.isOpen) return;
+
+    // HORIZONTAL NAVIGATION
+    if (dirX !== 0) {
+      if (this.row < 6) {
+        const nextCol = this.col + dirX;
+        if (nextCol >= 0 && nextCol <= 5) {
+          this.col = nextCol;
+          this.focusCurrent();
+        } else {
+          Snd.bump();
+        }
+      } else {
+        const nextCol = this.col + dirX;
+        if (nextCol >= 0 && nextCol <= 2) {
+          this.col = nextCol;
+          this.focusCurrent();
+        } else {
+          Snd.bump();
+        }
+      }
+      return;
+    }
+
+    // VERTICAL NAVIGATION
+    if (dirY !== 0) {
+      if (dirY < 0) {
+        // UP
+        if (this.row === 0) {
+          Snd.bump();
+        } else if (this.row === 6) {
+          this.row = 5;
+          // Map actions (0, 1, 2) back to keys (1, 3, 5)
+          this.col = Math.min(5, this.col * 2 + 1);
+          this.focusCurrent();
+        } else {
+          this.row--;
+          this.focusCurrent();
+        }
+      } else if (dirY > 0) {
+        // DOWN
+        if (this.row === 6) {
+          Snd.bump();
+        } else if (this.row === 5) {
+          this.row = 6;
+          // Map 6 columns (0,1->0, 2,3->1, 4,5->2) to 3 action buttons
+          this.col = Math.min(2, Math.floor(this.col / 2));
+          this.focusCurrent();
+        } else {
+          this.row++;
+          this.focusCurrent();
+        }
+      }
+    }
+  }
+
+  focusCurrent() {
+    let target = null;
+    if (this.row < 6) {
+      target = this.keyElements[this.row]?.[this.col];
+    } else {
+      target = this.actionElements[this.col];
+    }
+    if (target) {
+      TVNav.setFocus(target, true);
+    }
+  }
+
+  focusKey(r, c) {
+    this.row = r;
+    this.col = c;
+    this.focusCurrent();
+  }
+
+  triggerCurrent() {
+    if (!this.isOpen) return;
+    if (this.row < 6) {
+      const char = this.matrix[this.row]?.[this.col];
+      if (char) this.insertChar(char);
+    } else {
+      if (this.col === 0) this.insertChar(" ");
+      else if (this.col === 1) this.deleteChar();
+      else if (this.col === 2) this.confirm();
+    }
+  }
+}
+
+export const osk = new OnScreenKeyboard();
 
 /* ==========================================================================
    UI CONTROLLER & CONTENT LOADER (5.1 JSON CONTRACT)
@@ -842,6 +1130,8 @@ class AppUI {
     this.bindBusEvents();
     this.setupRailEvents();
     this.setupFeetFlash();
+    this.setupProfileUI();
+    osk.init();
 
     // Fetch games & virtual runs
     await Promise.all([this.loadGames(), this.loadRuns()]);
@@ -872,7 +1162,6 @@ class AppUI {
       });
     });
 
-    // Native mouse clicks support for all data-focusable
     document.addEventListener("click", (e) => {
       const target = e.target.closest("[data-focusable]");
       if (target) TVNav.activate(target);
@@ -898,12 +1187,26 @@ class AppUI {
     });
   }
 
+  setupProfileUI() {
+    const nameEl = document.getElementById("profile-name-display");
+    if (nameEl) nameEl.textContent = appState.profile.playerName;
+
+    const ageEl = document.getElementById("profile-age-val");
+    if (ageEl) ageEl.textContent = `${appState.profile.age || 28} ans`;
+
+    const weightEl = document.getElementById("profile-weight-val");
+    if (weightEl) weightEl.textContent = `${appState.profile.weightKg || 70} kg`;
+
+    const strideEl = document.getElementById("profile-stride-val");
+    if (strideEl) strideEl.textContent = `${appState.profile.strideLengthM.toFixed(2)} m`;
+  }
+
   openModal(id) {
     const el = document.getElementById(id);
     if (!el) return;
     el.classList.add("open");
     const firstBtn = el.querySelector("[data-focusable]");
-    if (firstBtn) TVNav.setFocus(firstBtn);
+    if (firstBtn && !osk.isOpen) TVNav.setFocus(firstBtn);
   }
 
   closeModal(id) {
@@ -1059,7 +1362,6 @@ class AppUI {
       return;
     }
 
-    // Group by genre
     const groups = new Map();
     items.forEach(item => {
       const genre = (item.meta?.genre || "Autres").trim();
@@ -1123,68 +1425,6 @@ class AppUI {
 }
 
 export const appUI = new AppUI();
-
-/* ==========================================================================
-   ON-SCREEN KEYBOARD (TV D-Pad Friendly)
-   ========================================================================== */
-
-class OnScreenKeyboard {
-  constructor() {
-    this.currentText = "";
-    this.callback = null;
-    this.setupKeys();
-  }
-
-  setupKeys() {
-    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split("");
-    const grid = document.getElementById("osk-keys-container");
-    if (!grid) return;
-    grid.innerHTML = "";
-
-    letters.forEach(char => {
-      const btn = document.createElement("button");
-      btn.className = "osk-key";
-      btn.setAttribute("data-focusable", "");
-      btn.textContent = char;
-      btn.addEventListener("click", () => {
-        if (this.currentText.length < 20) {
-          this.currentText += char;
-          this.updateDisplay();
-        }
-      });
-      grid.appendChild(btn);
-    });
-
-    document.getElementById("btn-osk-space")?.addEventListener("click", () => {
-      this.currentText += " ";
-      this.updateDisplay();
-    });
-
-    document.getElementById("btn-osk-backspace")?.addEventListener("click", () => {
-      this.currentText = this.currentText.slice(0, -1);
-      this.updateDisplay();
-    });
-
-    document.getElementById("btn-osk-done")?.addEventListener("click", () => {
-      appUI.closeModal("modal-osk");
-      if (this.callback) this.callback(this.currentText.trim());
-    });
-  }
-
-  open(initial, cb) {
-    this.currentText = initial || "";
-    this.callback = cb;
-    this.updateDisplay();
-    appUI.openModal("modal-osk");
-  }
-
-  updateDisplay() {
-    const el = document.getElementById("osk-input-text");
-    if (el) el.textContent = this.currentText;
-  }
-}
-
-export const osk = new OnScreenKeyboard();
 
 /* ==========================================================================
    LAYER 3: VIDEO CONTROLLER & GAME ENGINES
@@ -1315,7 +1555,7 @@ class VideoController {
 export const videoController = new VideoController();
 
 /**
- * GameEngine: Rhythm Timeline Engine with Outcome Seeks
+ * GameEngine: Rhythm Timeline Engine with Outcome Seeks (Score & Hearts Overlay)
  */
 class GameEngine {
   constructor() {
@@ -1348,9 +1588,15 @@ class GameEngine {
     this.timeline = (gameData.game?.timeline || []).map(e => Object.assign({}, e));
     this.judgedEvents.clear();
 
-    document.getElementById("video-stage")?.classList.add("active");
+    const stage = document.getElementById("video-stage");
+    if (stage) {
+      stage.classList.add("active", "mode-game");
+      stage.classList.remove("mode-run");
+    }
+
+    // Display HUD overlay for game, hide virtual run panel
     document.getElementById("game-hud")?.classList.remove("hidden");
-    document.getElementById("run-hud")?.classList.add("hidden");
+    document.getElementById("run-panel")?.classList.add("hidden");
     this.updateHUD();
 
     this.canvas = document.getElementById("game-feedback-canvas");
@@ -1383,6 +1629,7 @@ class GameEngine {
     if (this.rafLoopId) cancelAnimationFrame(this.rafLoopId);
     this.unsubEvents.forEach(un => un());
     this.unsubEvents = [];
+    document.getElementById("video-stage")?.classList.remove("mode-game");
     if (this.ctx && this.canvas) {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
@@ -1679,7 +1926,9 @@ class GameEngine {
 export const gameEngine = new GameEngine();
 
 /**
- * RunEngine: Virtual Run Mode with Step Cadence & Video Speed Adaptation
+ * RunEngine: Virtual Run Mode
+ * Dedicated Details Table at Left (Time, Steps, Speed, Distance, Calories based on age/weight/speed/steps).
+ * NO HEARTS, NO SCORE. Video is fully visible at right with ZERO OVERLAY!
  */
 class RunEngine {
   constructor() {
@@ -1693,6 +1942,7 @@ class RunEngine {
     this.movingTimeSec = 0;
     this.smoothedSpeedKmh = 0;
     this.currentCadenceSpm = 0;
+    this.calories = 0;
     this.lastStepTime = 0;
     this.lastRateChangeTime = 0;
     this.timerInterval = null;
@@ -1714,10 +1964,24 @@ class RunEngine {
     this.movingTimeSec = 0;
     this.smoothedSpeedKmh = 0;
     this.currentCadenceSpm = 0;
+    this.calories = 0;
     this.lastStepTime = performance.now();
 
-    document.getElementById("video-stage")?.classList.add("active");
-    document.getElementById("run-hud")?.classList.remove("hidden");
+    const stage = document.getElementById("video-stage");
+    if (stage) {
+      stage.classList.add("active", "mode-run");
+      stage.classList.remove("mode-game");
+    }
+
+    // Show Left Table Panel, HIDE GAME HUD COMPLETELY (NO HEARTS, NO SCORE)
+    const runPanel = document.getElementById("run-panel");
+    if (runPanel) {
+      runPanel.classList.remove("hidden");
+      const titleEl = document.getElementById("run-panel-route-title");
+      if (titleEl) titleEl.textContent = runData.meta?.title || "Sentier Alpin";
+      const calMetaEl = document.getElementById("run-tbl-cal-meta");
+      if (calMetaEl) calMetaEl.textContent = `${appState.profile.age || 28} ans · ${appState.profile.weightKg || 70} kg`;
+    }
     document.getElementById("game-hud")?.classList.add("hidden");
 
     this.unsubEvents = [
@@ -1727,6 +1991,8 @@ class RunEngine {
     ];
 
     notifyAndroid("RUN_STARTED", { title: runData.meta?.title });
+
+    this.updateTable();
 
     videoController.loadVideo(runData.video).then(() => {
       this.startMovingClock();
@@ -1741,6 +2007,7 @@ class RunEngine {
     if (this.rafLoopId) cancelAnimationFrame(this.rafLoopId);
     this.unsubEvents.forEach(un => un());
     this.unsubEvents = [];
+    document.getElementById("video-stage")?.classList.remove("mode-run");
   }
 
   handleStep(foot) {
@@ -1757,7 +2024,7 @@ class RunEngine {
     if (foot === "LEFT") this.leftSteps++;
     else this.rightSteps++;
 
-    // Foot flash on HUD
+    // Foot flash on left sidebar indicator
     const footEl = document.getElementById(foot === "LEFT" ? "foot-left-ind" : "foot-right-ind");
     if (footEl) {
       footEl.classList.add("flash");
@@ -1774,6 +2041,13 @@ class RunEngine {
 
     this.updateMetrics();
     this.distanceKm = (this.totalSteps * appState.profile.strideLengthM) / 1000;
+
+    // Add mechanical step energy expenditure scaled by weight and speed
+    const weight = appState.profile.weightKg || 70;
+    const stepWorkKcal = 0.038 * (weight / 70) * (Math.max(4, this.smoothedSpeedKmh) / 8.0);
+    this.calories += stepWorkKcal;
+
+    this.updateTable();
 
     // Resume video if paused
     if (videoController.player && typeof videoController.player.playVideo === "function") {
@@ -1819,10 +2093,25 @@ class RunEngine {
         }
       } else {
         this.movingTimeSec++;
+
+        // MET Aerobic Expenditure per second based on player age, weight, and speed
+        const age = appState.profile.age || 28;
+        const weight = appState.profile.weightKg || 70;
+        let met = 2.0;
+        if (this.smoothedSpeedKmh >= 12) met = 12.8;
+        else if (this.smoothedSpeedKmh >= 10) met = 11.5;
+        else if (this.smoothedSpeedKmh >= 8) met = 9.8;
+        else if (this.smoothedSpeedKmh >= 6) met = 7.5;
+        else if (this.smoothedSpeedKmh >= 4) met = 4.0;
+        else if (this.smoothedSpeedKmh > 0) met = 2.8;
+
+        const ageFactor = Math.max(0.75, 1 - (age - 20) * 0.003);
+        const kcalPerSec = ((met * 3.5 * weight / 200) / 60) * ageFactor;
+        this.calories += kcalPerSec;
       }
 
       this.adjustVideoPlaybackSpeed();
-      this.updateHUD();
+      this.updateTable();
     }, 1000);
   }
 
@@ -1855,52 +2144,65 @@ class RunEngine {
       if (cur !== closest) {
         videoController.player.setPlaybackRate(closest);
         this.lastRateChangeTime = now;
-        const lbl = document.getElementById("hud-metric-rate");
+        const lbl = document.getElementById("run-tbl-rate");
         if (lbl) lbl.textContent = `${closest}x`;
       }
     } catch (_) {}
   }
 
-  updateHUD() {
-    const spd = document.getElementById("hud-metric-speed");
-    if (spd) spd.textContent = this.smoothedSpeedKmh.toFixed(1);
+  updateTable() {
+    // 1. Current Running Time (MM:SS)
+    const timeEl = document.getElementById("run-tbl-time");
+    if (timeEl) {
+      const m = Math.floor(this.movingTimeSec / 60);
+      const s = String(this.movingTimeSec % 60).padStart(2, "0");
+      timeEl.textContent = `${m}:${s}`;
+    }
 
-    const pace = document.getElementById("hud-metric-pace");
-    if (pace) {
+    // 2. Count of Steps (Total + Left/Right Split)
+    const stepsEl = document.getElementById("run-tbl-steps");
+    if (stepsEl) stepsEl.textContent = this.totalSteps.toLocaleString("fr-FR");
+
+    const splitEl = document.getElementById("run-tbl-split");
+    if (splitEl) splitEl.textContent = `G: ${this.leftSteps} · D: ${this.rightSteps}`;
+
+    // 3. Speed (km/h)
+    const spdEl = document.getElementById("run-tbl-speed");
+    if (spdEl) spdEl.textContent = this.smoothedSpeedKmh.toFixed(1);
+
+    // 4. Distance (m / km)
+    const distEl = document.getElementById("run-tbl-distance");
+    const distUnit = document.getElementById("run-tbl-distance-unit");
+    if (distEl) {
+      if (this.distanceKm < 1.0) {
+        distEl.textContent = Math.round(this.distanceKm * 1000);
+        if (distUnit) distUnit.textContent = "m";
+      } else {
+        distEl.textContent = this.distanceKm.toFixed(2);
+        if (distUnit) distUnit.textContent = "km";
+      }
+    }
+
+    // 5. Calories (based on age, weight, speed, and steps)
+    const calEl = document.getElementById("run-tbl-calories");
+    if (calEl) calEl.textContent = Math.round(this.calories);
+
+    // 6. Pace (/km)
+    const paceEl = document.getElementById("run-tbl-pace");
+    if (paceEl) {
       if (this.smoothedSpeedKmh > 1.0) {
         const pMin = 60 / this.smoothedSpeedKmh;
         const pM = Math.floor(pMin);
         const pS = String(Math.floor((pMin % 1) * 60)).padStart(2, "0");
-        pace.textContent = `${pM}'${pS}"`;
+        paceEl.textContent = `${pM}'${pS}"`;
       } else {
-        pace.textContent = "--'--\"";
+        paceEl.textContent = "--'--\"";
       }
     }
 
-    const dist = document.getElementById("hud-metric-dist");
-    const unit = document.getElementById("hud-metric-dist-unit");
-    if (dist) {
-      if (this.distanceKm < 1.0) {
-        dist.textContent = Math.round(this.distanceKm * 1000);
-        if (unit) unit.textContent = "m";
-      } else {
-        dist.textContent = this.distanceKm.toFixed(2);
-        if (unit) unit.textContent = "km";
-      }
-    }
-
-    const time = document.getElementById("hud-metric-time");
-    if (time) {
-      const m = Math.floor(this.movingTimeSec / 60);
-      const s = String(this.movingTimeSec % 60).padStart(2, "0");
-      time.textContent = `${m}:${s}`;
-    }
-
-    const steps = document.getElementById("hud-metric-steps");
-    if (steps) steps.textContent = `${this.totalSteps} (G:${this.leftSteps} D:${this.rightSteps})`;
-
-    const cad = document.getElementById("hud-metric-cadence");
-    if (cad) cad.textContent = this.currentCadenceSpm;
+    // 7. Cadence (SPM)
+    const cadEl = document.getElementById("run-tbl-cadence");
+    if (cadEl) cadEl.textContent = this.currentCadenceSpm;
   }
 
   updateProgressBar() {
@@ -1911,6 +2213,9 @@ class RunEngine {
 
     const fill = document.getElementById("run-bottom-progress-fill");
     if (fill) fill.style.width = `${p}%`;
+
+    const pct = document.getElementById("run-progress-pct");
+    if (pct) pct.textContent = `${Math.round(p)}%`;
   }
 
   handleEnd() {
@@ -1921,6 +2226,7 @@ class RunEngine {
       distanceKm: this.distanceKm,
       totalSteps: this.totalSteps,
       movingTimeSec: this.movingTimeSec,
+      calories: Math.round(this.calories),
       avgSpeedKmh: this.movingTimeSec > 0 ? (this.distanceKm / (this.movingTimeSec / 3600)) : 0
     };
 
@@ -1930,11 +2236,11 @@ class RunEngine {
     document.getElementById("summary-stat-1-val").textContent = `${summary.distanceKm.toFixed(2)} km`;
     document.getElementById("summary-stat-1-lbl").textContent = "Distance Totale";
 
-    document.getElementById("summary-stat-2-val").textContent = `${summary.totalSteps}`;
+    document.getElementById("summary-stat-2-val").textContent = `${summary.totalSteps} pas`;
     document.getElementById("summary-stat-2-lbl").textContent = "Nombre de Pas";
 
-    document.getElementById("summary-stat-3-val").textContent = `${summary.avgSpeedKmh.toFixed(1)} km/h`;
-    document.getElementById("summary-stat-3-lbl").textContent = "Vitesse Moyenne";
+    document.getElementById("summary-stat-3-val").textContent = `${summary.calories} kcal`;
+    document.getElementById("summary-stat-3-lbl").textContent = "Calories Brûlées";
 
     appUI.openModal("modal-summary");
   }
