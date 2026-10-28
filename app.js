@@ -152,8 +152,53 @@ class InputLayer {
   }
 
   handleKeyDown(e) {
-    // If virtual keyboard is open, let OSK handle typing and navigation
+    // If virtual keyboard is open, handle typing and arrow navigation
     if (osk.isOpen) {
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        bus.emit("NAV_UP", { source: "keyboard" });
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        bus.emit("NAV_DOWN", { source: "keyboard" });
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        bus.emit("NAV_LEFT", { source: "keyboard" });
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        bus.emit("NAV_RIGHT", { source: "keyboard" });
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        bus.emit("OK", { source: "keyboard" });
+        return;
+      }
+      if (e.key === "Escape" || e.key === "BrowserBack" || e.key === "GoBack") {
+        e.preventDefault();
+        bus.emit("BACK", { source: "keyboard" });
+        return;
+      }
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        osk.deleteChar();
+        return;
+      }
+      if (e.key === " ") {
+        e.preventDefault();
+        osk.insertChar(" ");
+        return;
+      }
+      if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
+        e.preventDefault();
+        osk.insertChar(e.key.toUpperCase());
+        return;
+      }
       return;
     }
 
@@ -919,7 +964,8 @@ class OnScreenKeyboard {
         btn.textContent = char;
         btn.dataset.char = char;
 
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
           this.insertChar(char);
           this.focusKey(rIdx, cIdx);
         });
@@ -938,49 +984,26 @@ class OnScreenKeyboard {
 
     this.actionElements = [spaceBtn, backspaceBtn, doneBtn].filter(Boolean);
 
-    spaceBtn?.addEventListener("click", () => {
+    spaceBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
       this.insertChar(" ");
       this.row = 6;
       this.col = 0;
       this.focusCurrent();
     });
 
-    backspaceBtn?.addEventListener("click", () => {
+    backspaceBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
       this.deleteChar();
       this.row = 6;
       this.col = 1;
       this.focusCurrent();
     });
 
-    doneBtn?.addEventListener("click", () => {
+    doneBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
       this.confirm();
     });
-
-    // Support typing with physical keyboard when OSK is open
-    window.addEventListener("keydown", (e) => {
-      if (!this.isOpen) return;
-      if (e.key === "Backspace") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.deleteChar();
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.triggerCurrent();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.close();
-      } else if (e.key === " ") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.insertChar(" ");
-      } else if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.insertChar(e.key.toUpperCase());
-      }
-    }, true);
   }
 
   open(initial, cb) {
@@ -1164,7 +1187,9 @@ class AppUI {
 
     document.addEventListener("click", (e) => {
       const target = e.target.closest("[data-focusable]");
-      if (target) TVNav.activate(target);
+      if (!target) return;
+      if (target.closest("#modal-osk")) return; // Managed directly by OSK key handlers
+      TVNav.activate(target);
     });
   }
 
@@ -1199,6 +1224,12 @@ class AppUI {
 
     const strideEl = document.getElementById("profile-stride-val");
     if (strideEl) strideEl.textContent = `${appState.profile.strideLengthM.toFixed(2)} m`;
+
+    const editBtn = document.getElementById("btn-edit-name");
+    editBtn?.addEventListener("click", (e) => {
+      e.preventDefault();
+      TVNav.activate(editBtn);
+    });
   }
 
   openModal(id) {
@@ -1249,6 +1280,10 @@ class AppUI {
           if (itemResp.ok) {
             const data = await itemResp.json();
             if (data.type !== "game") continue;
+            if (!data.video || !data.video.videoId) {
+              console.warn(`Skipping game ${filename}: missing video.videoId`);
+              continue;
+            }
             this.sanitizeGameData(data, filename);
             items.push(data);
           }
@@ -1284,6 +1319,10 @@ class AppUI {
           if (itemResp.ok) {
             const data = await itemResp.json();
             if (data.type !== "virtual_run") continue;
+            if (!data.video || !data.video.videoId) {
+              console.warn(`Skipping run ${filename}: missing video.videoId`);
+              continue;
+            }
             this.sanitizeRunData(data, filename);
             items.push(data);
           }
@@ -1445,13 +1484,23 @@ class VideoController {
         resolve();
         return;
       }
-      window.onYouTubeIframeAPIReady = () => resolve();
+      const prevCallback = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (typeof prevCallback === "function") prevCallback();
+        resolve();
+      };
       if (!document.getElementById("yt-api-script")) {
         const tag = document.createElement("script");
         tag.id = "yt-api-script";
         tag.src = "https://www.youtube.com/iframe_api";
+        tag.onerror = () => {
+          console.warn("Failed to load YouTube iframe API script");
+          resolve();
+        };
         document.head.appendChild(tag);
       }
+      // Safety timeout: resolve anyway after 2.5s so UI never freezes
+      setTimeout(() => resolve(), 2500);
     });
   }
 
@@ -1460,39 +1509,75 @@ class VideoController {
     this.config = videoConfig;
 
     return new Promise((resolve) => {
+      let resolved = false;
+      const done = (val) => {
+        if (!resolved) {
+          resolved = true;
+          resolve(val);
+        }
+      };
+
+      // Safety timeout: ensure game/run engine always starts loop within 3s
+      setTimeout(() => {
+        if (!resolved) {
+          console.warn("YouTube player ready timeout - starting engine loop");
+          done(this.player);
+        }
+      }, 3000);
+
       if (this.player && typeof this.player.loadVideoById === "function") {
-        this.player.loadVideoById({
-          videoId: videoConfig.videoId,
-          startSeconds: videoConfig.trimStart || 0
-        });
-        if (videoConfig.audioMuted) this.player.mute();
-        else this.player.unMute();
+        try {
+          this.player.loadVideoById({
+            videoId: videoConfig.videoId,
+            startSeconds: videoConfig.trimStart || 0
+          });
+          if (videoConfig.audioMuted) this.player.mute();
+          else this.player.unMute();
+          try { this.player.playVideo(); } catch (_) {}
+        } catch (err) {
+          console.warn("loadVideoById error:", err);
+        }
         this.startWatcher();
-        resolve(this.player);
+        done(this.player);
         return;
       }
 
-      this.player = new window.YT.Player("yt-iframe-placeholder", {
-        videoId: videoConfig.videoId,
-        playerVars: {
-          controls: 0,
-          playsinline: 1,
-          rel: 0,
-          modestbranding: 1,
-          disablekb: 1,
-          origin: window.location.origin
-        },
-        events: {
-          onReady: (e) => {
-            if (videoConfig.audioMuted) e.target.mute();
-            this.startWatcher();
-            resolve(e.target);
+      if (!window.YT || !window.YT.Player) {
+        console.warn("window.YT not available - skipping player creation");
+        done(null);
+        return;
+      }
+
+      try {
+        this.player = new window.YT.Player("yt-iframe-placeholder", {
+          videoId: videoConfig.videoId,
+          playerVars: {
+            autoplay: 1,
+            controls: 0,
+            playsinline: 1,
+            rel: 0,
+            modestbranding: 1,
+            disablekb: 1,
+            origin: window.location.origin
           },
-          onError: (e) => {
-            TVNav.toast(`Erreur vidéo (${e.data})`);
+          events: {
+            onReady: (e) => {
+              if (videoConfig.audioMuted) e.target.mute();
+              try { e.target.playVideo(); } catch (_) {}
+              this.startWatcher();
+              done(e.target);
+            },
+            onError: (e) => {
+              console.warn("YouTube player error:", e.data);
+              TVNav.toast(`Erreur vidéo (${e.data})`);
+              done(this.player);
+            }
           }
-        }
-      });
+        });
+      } catch (err) {
+        console.warn("new YT.Player error:", err);
+        done(null);
+      }
     });
   }
 
